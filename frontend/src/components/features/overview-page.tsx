@@ -46,7 +46,7 @@ import { useApi } from "@/lib/hooks";
 
 const RANGES = [30, 60, 90] as const;
 
-export default function OverviewPage() {
+export function OverviewPage() {
   const { status, loading, error, currency, refresh } = useDataStatus();
 
   if (error) return <ErrorState message={errorMessage(error)} onRetry={refresh} />;

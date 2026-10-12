@@ -138,3 +138,14 @@ All charts:
 - Every input has a `<label>`. Icon-only buttons have an `aria-label`.
 - Focus rings are visible (2px brand outline). Navigation and dialogs work with the keyboard.
 - The layout works at 360px width with no horizontal page scroll; wide tables scroll inside their own container.
+
+## 10. shadcn/ui components
+
+The project is set up for [shadcn/ui](https://ui.shadcn.com) (`frontend/components.json`), so `npx shadcn@latest add <component>` drops new components into `src/components/ui/`.
+
+- **Tokens:** the shadcn semantic colours (`background`, `foreground`, `primary`, `muted`, `accent`, `border`, `ring`, …) are defined in `globals.css` and mapped onto the CloudPulse palette. `:root` matches the light dashboard. `.dark` is the navy *ink* palette. Tailwind v4 has no `tailwind.config.js`; theme extensions live in `globals.css` (`@theme`).
+- **Helpers:** `cn()` in `src/lib/utils.ts` (clsx + tailwind-merge). `components/ui/button.tsx` and `badge.tsx` are the shadcn versions. The dashboard still uses its own `components/ui/primitives.tsx`.
+- **Theme:** `next-themes` provides `useTheme()`, with the app fixed to light. Dark sections opt in locally by wrapping content in `<div className="dark">`, as the landing hero does.
+- **Landing hero** (`components/ui/hero-section.tsx`, with `mockup.tsx` and `glow.tsx`):
+  - It renders on the ink palette, with a brand-blue glow and staggered entrance animations (`animate-appear`, `delay-*`). The animations are switched off for `prefers-reduced-motion`.
+  - Its image is a real screenshot of the dashboard with the built-in sample data (`public/images/cloudpulse-dashboard.png`), labelled *Sample data*.

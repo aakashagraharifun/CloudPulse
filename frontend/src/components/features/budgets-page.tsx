@@ -51,7 +51,7 @@ const STATE_BADGE = {
   no_data: { tone: "neutral", label: "No data" },
 } as const;
 
-export default function BudgetsPage() {
+export function BudgetsPage() {
   const { can } = useAuth();
   const budgets = useApi<BudgetStatus[]>("/budgets");
   const [alertsOffset, setAlertsOffset] = useState(0);

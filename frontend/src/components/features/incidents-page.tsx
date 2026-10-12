@@ -47,7 +47,7 @@ const TABS: { id: IncidentStatus | "all"; label: string }[] = [
   { id: "all", label: "All" },
 ];
 
-export default function IncidentsPage() {
+export function IncidentsPage() {
   const { can } = useAuth();
   const [status, setStatus] = useState<IncidentStatus | "all">("open");
   const [severity, setSeverity] = useState<Severity | "">("");

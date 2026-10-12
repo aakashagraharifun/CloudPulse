@@ -35,3 +35,6 @@ Thumbs.db
 
 # Playwright auth state (contains session tokens)
 frontend/e2e/.auth/
+
+# Local database backups (contain password hashes and billing data)
+backups/

@@ -45,7 +45,7 @@ function isImportDetail(value: unknown): value is ImportDetail {
   return typeof value === "object" && value !== null && "status" in value && "rows_total" in value;
 }
 
-export default function ImportsPage() {
+export function ImportsPage() {
   const { refresh } = useDataStatus();
   const { can } = useAuth();
   const [offset, setOffset] = useState(0);

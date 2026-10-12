@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* `dark:` variants follow a `.dark` class (next-themes / scoped sections), not the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* CloudPulse design tokens - see docs/design.md */
 @theme {
   --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -25,6 +28,104 @@
   --color-series-2: #eb6834;
   --color-series-3: #1baf7a;
   --color-series-4: #eda100;
+
+  /* Marketing layout width (`max-w-container`) used by the landing hero. */
+  --container-container: 80rem;
+
+  /* Entrance animations (`animate-appear`, `animate-appear-zoom`). */
+  --animate-appear: appear 0.5s ease-out forwards;
+  --animate-appear-zoom: appear-zoom 0.5s ease-out forwards;
+
+  @keyframes appear {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes appear-zoom {
+    0% {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+/*
+ * shadcn/ui semantic tokens, mapped onto the CloudPulse palette.
+ * Light (`:root`) matches the dashboard; `.dark` is the navy "ink" used by the
+ * landing hero, which scopes `.dark` to that section only.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --primary: #2a78d6;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #d03b3b;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #2a78d6;
+
+  /* Glow accents as HSL channels (brand blue #2a78d6 and its light step #86b6ef). */
+  --brand: 213 68% 50%;
+  --brand-foreground: 213 77% 73%;
+}
+
+.dark {
+  --background: #0b1b33;
+  --foreground: #ffffff;
+  --muted: #13294a;
+  --muted-foreground: #94a3b8;
+  --primary: #2a78d6;
+  --primary-foreground: #ffffff;
+  --secondary: #13294a;
+  --secondary-foreground: #ffffff;
+  --accent: #ffffff;
+  --accent-foreground: #0b1b33;
+  --destructive: #d03b3b;
+  --destructive-foreground: #ffffff;
+  /* Used at low opacity for hairlines (e.g. border-border/15) on the navy surface. */
+  --border: #ffffff;
+  --input: #334155;
+  --ring: #86b6ef;
+
+  --brand: 213 77% 73%;
+  --brand-foreground: 213 68% 50%;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
 }
 
 :root {
@@ -54,4 +155,35 @@ body {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Staggered entrance: delays for `animate-appear*` (Tailwind's delay-* only covers transitions). */
+@layer utilities {
+  .delay-100 {
+    animation-delay: 100ms;
+  }
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+  .delay-700 {
+    animation-delay: 700ms;
+  }
+  .delay-1000 {
+    animation-delay: 1000ms;
+  }
+}
+
+/* Fades a section's bottom edge into whatever follows it. */
+@utility fade-bottom {
+  mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+}
+
+/* Respect reduced motion: show animated content immediately instead of animating in. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-appear,
+  .animate-appear-zoom {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

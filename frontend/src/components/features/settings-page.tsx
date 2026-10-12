@@ -12,7 +12,7 @@ import { Notice, PageHeader } from "@/components/ui/primitives";
 const LINK =
   "rounded-md bg-white px-3 py-1.5 font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50";
 
-export default function SettingsPage() {
+export function SettingsPage() {
   const { can } = useAuth();
   const admin = can("admin");
   return (

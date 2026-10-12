@@ -1,7 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ArrowDownIcon, LayoutDashboardIcon } from "lucide-react";
+
 import { Logo } from "@/components/brand/logo";
+import { HeroSection } from "@/components/ui/hero-section";
 import { buttonClass, cx } from "@/components/ui/primitives";
 
 const NAV = [
@@ -66,101 +69,37 @@ function SiteHeader() {
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden bg-ink text-white">
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            "radial-gradient(60rem 30rem at 85% -10%, rgba(42,120,214,0.45), transparent 60%), radial-gradient(40rem 20rem at -10% 110%, rgba(27,175,122,0.18), transparent 60%)",
+    // `.dark` scopes the shadcn tokens to the navy "ink" palette, continuing the header.
+    <div className="dark">
+      <HeroSection
+        badge={{
+          text: "Runs locally",
+          action: { text: "Try the sample data", href: "/dashboard/imports" },
+        }}
+        title="Know why your cloud bill changed"
+        description="CloudPulse turns billing exports into cost analytics, flags unusual spend with explainable statistics, and shows the evidence behind every increase."
+        actions={[
+          {
+            text: "Open the dashboard",
+            href: "/dashboard",
+            variant: "default",
+            icon: <LayoutDashboardIcon className="h-5 w-5" aria-hidden />,
+          },
+          {
+            text: "See how it works",
+            href: "#how-it-works",
+            variant: "glow",
+            icon: <ArrowDownIcon className="h-5 w-5" aria-hidden />,
+          },
+        ]}
+        image={{
+          // CloudPulse is light-only for now (docs/design.md), so both themes use the same screenshot.
+          light: "/images/cloudpulse-dashboard.png",
+          dark: "/images/cloudpulse-dashboard.png",
+          alt: "CloudPulse overview dashboard with the built-in sample data: month-to-date spend, month-end forecast, a daily spend spike and the top services.",
         }}
       />
-      <Container className="relative grid items-center gap-12 py-20 lg:grid-cols-2 lg:py-28">
-        <div>
-          <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-slate-200">
-            <span className="size-1.5 rounded-full bg-green-400" aria-hidden />
-            Developer-first cloud cost intelligence
-          </p>
-          <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl lg:text-[3.5rem]">
-            Know <span className="text-brand-200">why</span> your cloud bill changed.
-          </h1>
-          <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-300">
-            CloudPulse turns raw billing exports into cost analytics, flags unusual spend with explainable statistics, and
-            shows the evidence behind every increase: which service, resource and region, by how much, and compared with
-            what.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/dashboard" className={cx(buttonClass("primary"), "h-11 px-5 text-base")}>
-              Open the dashboard
-            </Link>
-            <a
-              href="#how-it-works"
-              className="inline-flex h-11 items-center rounded-lg border border-white/20 px-5 text-base font-medium text-white hover:bg-white/10"
-            >
-              See how it works
-            </a>
-          </div>
-          <p className="mt-6 text-sm text-slate-400">
-            Runs entirely on your machine. No cloud credentials, paid APIs or AI services required.
-          </p>
-        </div>
-        <HeroPreview />
-      </Container>
-    </section>
-  );
-}
-
-/** A static rendering of the investigation view, using the built-in sample dataset's numbers. */
-function HeroPreview() {
-  // EC2 daily cost in the sample data, Sep 28 - Oct 11 (normal ~$62.59/day; spikes $849.13 and $652.50).
-  const bars = [...Array(9).fill(7.4), 100, 76.8, 7.4, 7.4, 7.4];
-  return (
-    <figure className="relative">
-      <div className="rounded-2xl border border-white/10 bg-white p-5 text-slate-900 shadow-2xl shadow-black/40">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Incident · Service</p>
-            <p className="text-base font-semibold">Amazon Elastic Compute Cloud</p>
-          </div>
-          <span className="rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-800 ring-1 ring-inset ring-orange-200">
-            ● High
-          </span>
-        </div>
-        <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-          <div className="rounded-lg bg-slate-50 p-3">
-            <p className="text-xs text-slate-500">Actual</p>
-            <p className="font-semibold">$1,501.63</p>
-          </div>
-          <div className="rounded-lg bg-slate-50 p-3">
-            <p className="text-xs text-slate-500">Expected</p>
-            <p className="font-semibold">$125.18</p>
-          </div>
-          <div className="rounded-lg bg-red-50 p-3">
-            <p className="text-xs text-red-700">Above expected</p>
-            <p className="font-semibold text-red-700">+$1,376.45</p>
-          </div>
-        </div>
-        <div className="mt-4 flex h-24 items-end gap-1.5" aria-hidden>
-          {bars.map((h, i) => (
-            <div
-              key={i}
-              className={cx("flex-1 rounded-t", i === 9 || i === 10 ? "bg-critical" : "bg-brand-600/80")}
-              style={{ height: `${h}%` }}
-            />
-          ))}
-        </div>
-        <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm">
-          <p className="font-medium">Largest contributor</p>
-          <p className="mt-1 text-slate-600">
-            Resource <span className="font-mono text-[0.8rem] text-slate-900">i-0f3e9a7c5b1d2468a</span> in us-west-2 had no
-            baseline spend and accounts for 100% of the increase.
-          </p>
-        </div>
-      </div>
-      <figcaption className="mt-3 text-center text-xs text-slate-400">
-        Illustration using CloudPulse’s built-in synthetic sample dataset.
-      </figcaption>
-    </figure>
+    </div>
   );
 }
 

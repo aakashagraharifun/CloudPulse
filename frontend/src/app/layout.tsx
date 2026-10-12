@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 
+import { ThemeProvider } from "@/components/theme-provider";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,8 +17,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+    // next-themes sets the theme class on <html> before hydration, hence the warning suppression.
+    <html
+      lang="en"
+      className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <body className="flex min-h-full flex-col">
+        <ThemeProvider attribute="class" forcedTheme="light" enableSystem={false} disableTransitionOnChange>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
