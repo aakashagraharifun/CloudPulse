@@ -38,3 +38,5 @@ frontend/e2e/.auth/
 
 # Local database backups (contain password hashes and billing data)
 backups/
+
+CloudPulse.mp4
