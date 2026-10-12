@@ -205,7 +205,8 @@ export function ImportsPage() {
           <p className="mb-4 text-sm text-slate-600">
             Cloud (AWS, Google Cloud, Azure), AI model API (OpenAI, Anthropic, Gemini) and SaaS costs in USD with three
             injected anomalies: a NAT gateway data-transfer spike, a new GPU instance and an LLM token spike. It is
-            labelled as sample data everywhere it appears.
+            labelled as sample data everywhere it appears. If an older version is loaded, updating adds only the new
+            providers for the same dates; nothing is counted twice.
           </p>
           <LoadSampleButton variant="secondary" onLoaded={afterImport} />
         </Card>

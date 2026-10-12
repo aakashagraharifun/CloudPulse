@@ -11,7 +11,7 @@ Duplicate protection works at two levels:
 import hashlib
 import logging
 import re
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from pathlib import PurePosixPath
 
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.models import BillingImport, BillingRecord, ImportSource, ImportStatus
+from app.services.ingestion.sample_data import generate_sample_csv
 from app.services.normalization.allocation import AllocationEngine
 from app.services.normalization.normalizer import (
     FileValidationError,
@@ -227,3 +228,57 @@ def delete_import(db: Session, import_id: int) -> None:
         raise ConflictError("The import is still processing and cannot be deleted yet.")
     db.delete(billing_import)
     db.commit()
+
+
+@dataclass(frozen=True)
+class SampleUpdate:
+    """How the built-in sample relates to the sample data already stored."""
+
+    end_date: date
+    content: bytes
+    missing: int  # records of the current sample that are not stored yet
+
+
+def plan_sample_update(db: Session, settings: Settings) -> SampleUpdate | None:
+    """Plan topping up previously loaded sample data with records added in newer versions.
+
+    Returns None when no sample data is stored. The update regenerates the sample for the
+    stored end date, so dates line up and existing records are recognised as duplicates.
+    It raises ConflictError when the sample is already complete, or when the stored sample
+    is not a subset of the current one (an update could then double-count costs).
+    """
+    sample_import_ids = select(BillingImport.id).where(
+        BillingImport.source == ImportSource.SAMPLE,
+        BillingImport.status == ImportStatus.COMPLETED,
+    )
+    end = db.scalar(
+        select(func.max(BillingRecord.usage_date)).where(
+            BillingRecord.import_id.in_(sample_import_ids)
+        )
+    )
+    if end is None:
+        return None
+    content = generate_sample_csv(end).encode("utf-8")
+    current = {
+        r.fingerprint
+        for r in normalize_csv(
+            content,
+            max_rows=settings.max_upload_rows,
+            max_errors=settings.max_reported_errors,
+            today=end,
+        ).records
+    }
+    stored = set(
+        db.scalars(
+            select(BillingRecord.fingerprint).where(BillingRecord.import_id.in_(sample_import_ids))
+        )
+    )
+    if not stored <= current:
+        raise ConflictError(
+            "The sample data that is loaded does not match the built-in sample, so it cannot be "
+            "updated without double-counting costs. Delete the sample import first to reload it."
+        )
+    missing = len(current - stored)
+    if missing == 0:
+        raise ConflictError("Sample data is already loaded and up to date.")
+    return SampleUpdate(end, content, missing)

@@ -80,7 +80,7 @@ curl.exe http://127.0.0.1:8000/api/v1/ready
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | `/imports` | Upload a CSV (`multipart/form-data`: `file`, optional `is_sample=true`) |
-| POST | `/imports/sample` | Load the built-in synthetic dataset (409 if already loaded) |
+| POST | `/imports/sample` | Load the built-in synthetic dataset. If an older version is loaded, only the records new in this version are added for the same dates. 409 if it is already complete, or if the loaded sample does not match the built-in one (an update could double-count) |
 | GET | `/imports` | List imports, newest first |
 | GET | `/imports/{id}` | Status, counters and validation errors |
 | DELETE | `/imports/{id}` | Delete an import **and all of its billing records** |

@@ -2,14 +2,14 @@
 
 import csv
 import io
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin, require_member
 from app.core.config import Settings, get_settings
-from app.core.errors import AppError, ConflictError
+from app.core.errors import AppError
 from app.db.session import get_db
 from app.models import BillingImport, ImportSource, ImportStatus, User
 from app.schemas.common import Page
@@ -142,7 +142,12 @@ def upload_billing_file(
     response_model=ImportDetail,
     status_code=status.HTTP_201_CREATED,
     summary="Load the built-in synthetic dataset (90 days, with injected anomalies)",
-    responses={409: {"description": "Sample data is already loaded."}},
+    responses={
+        409: {
+            "description": "Sample data is already loaded and complete, or the loaded sample "
+            "does not match the built-in one."
+        }
+    },
 )
 def load_sample_data(
     request: Request,
@@ -150,18 +155,23 @@ def load_sample_data(
     settings: Settings = Depends(get_settings),
     user: User = Depends(require_member),
 ) -> ImportDetail:
-    existing = db.scalar(
-        select(BillingImport).where(
-            BillingImport.source == ImportSource.SAMPLE,
-            BillingImport.status == ImportStatus.COMPLETED,
+    """Load the synthetic dataset, or add what a newer version of it contains.
+
+    When sample data from an earlier version is loaded (for example before AI and
+    multi-cloud lines were added), only the missing records are imported, for the same
+    dates. Existing records are never duplicated.
+    """
+    update = service.plan_sample_update(db, settings)
+    if update is not None:
+        billing_import = service.import_billing_file(
+            db,
+            filename=f"cloudpulse-sample-update-to-{update.end_date.isoformat()}.csv",
+            content=update.content,
+            settings=settings,
+            source=ImportSource.SAMPLE,
+            today=update.end_date + timedelta(days=1),
         )
-    )
-    if existing is not None:
-        raise ConflictError(
-            f"Sample data is already loaded (import #{existing.id}). "
-            "Delete that import first to reload it.",
-            details={"import_id": existing.id},
-        )
+        return _finish(db, billing_import, user, request, "import.sample_updated")
     end = default_end_date()
     content = generate_sample_csv(end).encode("utf-8")
     billing_import = service.import_billing_file(

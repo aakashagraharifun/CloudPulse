@@ -35,17 +35,6 @@
   /* Entrance animations (`animate-appear`, `animate-appear-zoom`). */
   --animate-appear: appear 0.5s ease-out forwards;
   --animate-appear-zoom: appear-zoom 0.5s ease-out forwards;
-  /* Provider logo strip: the track holds the list twice and moves right by one copy. */
-  --animate-marquee-right: marquee-right 60s linear infinite;
-
-  @keyframes marquee-right {
-    from {
-      transform: translateX(-50%);
-    }
-    to {
-      transform: translateX(0);
-    }
-  }
 
   @keyframes appear {
     0% {
@@ -143,11 +132,24 @@
   color-scheme: light;
 }
 
+/*
+ * No page-level scrollbars: clip sideways overflow (decorative glows, the marquee track) so the
+ * page never scrolls horizontally, and hide the viewport's vertical bar while keeping wheel,
+ * touch and keyboard scrolling. `clip` rather than `hidden` so sticky headers keep working.
+ * Inner scroll areas (tables, panels) keep their own scrollbars.
+ */
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
 }
 
 body {
+  overflow-x: clip;
   background: #ffffff;
   color: var(--color-slate-900);
   font-family: var(--font-sans);
@@ -189,8 +191,43 @@ body {
   mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
 }
 
-@utility fade-x {
+/*
+ * Provider logo strip (components/brand/provider-marquee.tsx). The track holds the list
+ * twice and moves left by one copy (logos enter from the right), so the loop is seamless. Plain CSS rather than
+ * utilities, so the animation never depends on Tailwind detecting the class names.
+ */
+@keyframes marquee-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee {
+  overflow: hidden;
   mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-left 60s linear infinite;
+}
+
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    mask-image: none;
+  }
+  .marquee-track {
+    width: 100%;
+    animation: none;
+  }
 }
 
 /* Respect reduced motion: show animated content immediately instead of animating in. */

@@ -45,7 +45,7 @@ test.describe("landing page hero", () => {
 test.describe("landing page providers", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("hero starts right below the header and the provider strip scrolls left to right", async ({ page }) => {
+  test("hero starts right below the header and the provider strip scrolls right to left", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/");
     const headerBottom = await page.locator("header").evaluate((el) => el.getBoundingClientRect().bottom);
@@ -61,18 +61,18 @@ test.describe("landing page providers", () => {
     for (const name of ["AWS", "Google Cloud", "Microsoft Azure", "OpenAI", "Anthropic"]) {
       await expect(lists.getByRole("listitem").filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(1);
     }
-    const track = strip.locator(".animate-marquee-right");
+    const track = strip.locator(".marquee-track");
     const x = () => track.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41);
     const before = await x();
     await page.waitForTimeout(500);
-    expect(await x()).toBeGreaterThan(before); // moving right
+    expect(await x()).toBeLessThan(before); // moving left: logos enter from the right
   });
 
   test("the provider strip is static under reduced motion", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
     const strip = page.getByRole("region", { name: /Bring cost data from every provider/ });
-    const track = strip.locator(".animate-marquee-right");
+    const track = strip.locator(".marquee-track");
     expect(await track.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
     await expect(strip.locator("ul[aria-hidden=true]")).toBeHidden();
     // Wrapped instead of clipped: the last provider is visible without scrolling the strip.

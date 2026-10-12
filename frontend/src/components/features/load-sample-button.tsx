@@ -7,7 +7,10 @@ import { useDataStatus } from "@/components/shell/data-status";
 import { Button } from "@/components/ui/primitives";
 import { api, errorMessage, type ImportDetail } from "@/lib/api";
 
-/** Loads the built-in synthetic dataset (clearly marked as sample data). */
+/**
+ * Loads the built-in synthetic dataset (clearly marked as sample data). When an older
+ * version is already loaded, the API adds only the records that are new in this version.
+ */
 export function LoadSampleButton({
   variant = "primary",
   onLoaded,
@@ -15,7 +18,8 @@ export function LoadSampleButton({
   variant?: "primary" | "secondary";
   onLoaded?: (result: ImportDetail) => void;
 }) {
-  const { refresh } = useDataStatus();
+  const { status, refresh } = useDataStatus();
+  const update = Boolean(status?.has_sample_data);
   const { can } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +44,7 @@ export function LoadSampleButton({
   return (
     <div className="flex flex-col items-center gap-2">
       <Button variant={variant} onClick={load} disabled={busy}>
-        {busy ? "Loading sample data…" : "Load sample data"}
+        {busy ? "Loading sample data…" : update ? "Update sample data" : "Load sample data"}
       </Button>
       {error && (
         <p role="alert" className="max-w-sm text-center text-xs text-red-700">

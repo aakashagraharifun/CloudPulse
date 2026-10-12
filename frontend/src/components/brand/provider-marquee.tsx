@@ -63,8 +63,8 @@ export function ProviderMarquee({ className }: { className?: string }) {
         <h2 id="providers-heading" className="text-center text-sm font-medium text-muted-foreground">
           Bring cost data from every provider you pay: cloud, AI model APIs and SaaS
         </h2>
-        <div className="fade-x group mt-8 overflow-hidden motion-reduce:[mask-image:none]">
-          <div className="flex w-max animate-marquee-right group-hover:[animation-play-state:paused] motion-reduce:w-full motion-reduce:animate-none">
+        <div className="marquee mt-8">
+          <div className="marquee-track">
             <ProviderList />
             <ProviderList duplicate />
           </div>

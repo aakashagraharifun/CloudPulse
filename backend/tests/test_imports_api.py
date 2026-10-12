@@ -1,5 +1,8 @@
 """Integration tests for the billing import workflow (API + PostgreSQL)."""
 
+import csv
+import io
+from datetime import date
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -7,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import AllocationRule, BillingImport, BillingRecord
+from app.services.ingestion.sample_data import SAMPLE_COLUMNS, generate_sample_rows
 from app.services.normalization.allocation import reapply_allocation_rules
 
 HEADER = "usage_date,provider,service,resource_id,currency,cost,project\n"
@@ -122,7 +126,43 @@ def test_sample_data_loads_once_and_is_marked_sample(client: TestClient) -> None
     body = first.json()
     assert body["source"] == "sample"
     assert body["rows_inserted"] > 1000
+    again = client.post("/api/v1/imports/sample")
+    assert again.status_code == 409
+    assert "up to date" in again.json()["error"]["message"]
+
+
+def test_older_sample_is_topped_up_without_duplicates(client: TestClient, db: Session) -> None:
+    """Sample data loaded before AI/multi-cloud lines existed gains only the new records."""
+    end = date(2026, 10, 11)
+    rows = generate_sample_rows(end)
+    older = [r for r in rows if not r["model"] and r["provider"] in ("aws", "gcp")]
+    buffer = io.StringIO()
+    columns = [c for c in SAMPLE_COLUMNS if c != "model"]
+    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore", lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(older)
+    first = upload(client, buffer.getvalue(), is_sample="true")
+    assert first.status_code == 201, first.json()
+    total_before = db.scalar(select(func.sum(BillingRecord.cost)))
+
+    update = client.post("/api/v1/imports/sample")
+    assert update.status_code == 201, update.json()
+    body = update.json()
+    assert body["rows_inserted"] == len(rows) - len(older)
+    assert body["rows_duplicate"] == len(older)
+    assert db.scalar(select(func.count()).select_from(BillingRecord)) == len(rows)
+    providers = set(db.scalars(select(BillingRecord.provider).distinct()))
+    assert {"azure", "openai", "anthropic"} <= providers
+    added = sum(Decimal(r["cost"]) for r in rows) - sum(Decimal(r["cost"]) for r in older)
+    assert db.scalar(select(func.sum(BillingRecord.cost))) == total_before + added
     assert client.post("/api/v1/imports/sample").status_code == 409
+
+
+def test_sample_update_refuses_data_that_does_not_match(client: TestClient) -> None:
+    upload(client, HEADER + "2026-10-01,aws,EC2,i-1,USD,1,web\n", is_sample="true")
+    response = client.post("/api/v1/imports/sample")
+    assert response.status_code == 409
+    assert "double-counting" in response.json()["error"]["message"]
 
 
 def test_sample_flag_on_upload(client: TestClient) -> None:

@@ -41,4 +41,4 @@ cd backend
 python -m scripts.generate_sample_data
 ```
 
-In the dashboard, **Imports → Load sample data** generates the same dataset ending yesterday and marks it as sample data.
+In the dashboard, **Imports → Load sample data** generates the same dataset ending yesterday and marks it as sample data. If you loaded an earlier version (AWS and Google Cloud only), the button reads **Update sample data** and adds only the new providers for the same dates; existing records are recognised as duplicates, so nothing is counted twice.
