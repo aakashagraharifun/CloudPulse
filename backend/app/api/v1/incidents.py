@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_member
 from app.db.session import get_db
+from app.models import User
 from app.schemas.anomalies import (
     AcknowledgeInput,
     IncidentCounts,
@@ -71,28 +73,39 @@ def get_investigation(incident_id: int, db: Session = Depends(get_db)) -> Invest
     responses=_TRANSITION_ERRORS,
 )
 def acknowledge(
-    incident_id: int, payload: AcknowledgeInput, db: Session = Depends(get_db)
+    incident_id: int,
+    payload: AcknowledgeInput,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
 ) -> IncidentDetail:
     incident = workflow.get_incident(db, incident_id)
-    workflow.acknowledge(db, incident, payload.actor, payload.note)
+    workflow.acknowledge(db, incident, user.name, payload.note)
     db.refresh(incident)
     return IncidentDetail.model_validate(incident)
 
 
 @router.post("/{incident_id}/resolve", response_model=IncidentDetail, responses=_TRANSITION_ERRORS)
 def resolve(
-    incident_id: int, payload: ResolveInput, db: Session = Depends(get_db)
+    incident_id: int,
+    payload: ResolveInput,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
 ) -> IncidentDetail:
     incident = workflow.get_incident(db, incident_id)
-    workflow.resolve(db, incident, payload.actor, payload.resolution_note)
+    workflow.resolve(db, incident, user.name, payload.resolution_note)
     db.refresh(incident)
     return IncidentDetail.model_validate(incident)
 
 
 @router.post("/{incident_id}/reopen", response_model=IncidentDetail, responses=_TRANSITION_ERRORS)
-def reopen(incident_id: int, payload: ReopenInput, db: Session = Depends(get_db)) -> IncidentDetail:
+def reopen(
+    incident_id: int,
+    payload: ReopenInput,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
+) -> IncidentDetail:
     incident = workflow.get_incident(db, incident_id)
-    workflow.reopen(db, incident, payload.actor, payload.reason)
+    workflow.reopen(db, incident, user.name, payload.reason)
     db.refresh(incident)
     return IncidentDetail.model_validate(incident)
 
@@ -104,9 +117,12 @@ def reopen(incident_id: int, payload: ReopenInput, db: Session = Depends(get_db)
     summary="Add a note to the incident timeline",
 )
 def add_note(
-    incident_id: int, payload: NoteInput, db: Session = Depends(get_db)
+    incident_id: int,
+    payload: NoteInput,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
 ) -> IncidentEventRead:
     incident = workflow.get_incident(db, incident_id)
     return IncidentEventRead.model_validate(
-        workflow.add_note(db, incident, payload.actor, payload.body)
+        workflow.add_note(db, incident, user.name, payload.body)
     )

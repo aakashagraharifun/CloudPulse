@@ -3,15 +3,17 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.core.errors import NotFoundError
 from app.db.session import get_db
-from app.models import AllocationRule
+from app.models import AllocationRule, User
 from app.schemas.common import APIModel
+from app.services.audit import record_audit
 from app.services.normalization.allocation import reapply_allocation_rules
 
 router = APIRouter(prefix="/allocation-rules", tags=["allocation rules"])
@@ -77,10 +79,23 @@ def list_rules(db: Session = Depends(get_db)) -> list[AllocationRuleRead]:
     summary="Create a rule and re-attribute existing records",
 )
 def create_rule(
-    payload: AllocationRuleInput, db: Session = Depends(get_db)
+    payload: AllocationRuleInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
 ) -> AllocationRuleMutation:
     rule = AllocationRule(**payload.model_dump())
     db.add(rule)
+    db.flush()
+    record_audit(
+        db,
+        "allocation_rule.created",
+        actor=user,
+        request=request,
+        target_type="allocation_rule",
+        target_id=rule.id,
+        details=payload.model_dump(),
+    )
     db.commit()
     updated = reapply_allocation_rules(db)
     return AllocationRuleMutation(
@@ -94,13 +109,26 @@ def create_rule(
     summary="Replace a rule and re-attribute existing records",
 )
 def update_rule(
-    rule_id: int, payload: AllocationRuleInput, db: Session = Depends(get_db)
+    rule_id: int,
+    payload: AllocationRuleInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
 ) -> AllocationRuleMutation:
     rule = db.get(AllocationRule, rule_id)
     if rule is None:
         raise NotFoundError("Allocation rule", rule_id)
     for key, value in payload.model_dump().items():
         setattr(rule, key, value)
+    record_audit(
+        db,
+        "allocation_rule.updated",
+        actor=user,
+        request=request,
+        target_type="allocation_rule",
+        target_id=rule_id,
+        details=payload.model_dump(),
+    )
     db.commit()
     db.refresh(rule)
     updated = reapply_allocation_rules(db)
@@ -115,10 +143,24 @@ def update_rule(
     summary="Delete a rule and re-attribute existing records",
     responses={404: {"description": "Rule not found"}},
 )
-def delete_rule(rule_id: int, db: Session = Depends(get_db)) -> AllocationRuleMutation:
+def delete_rule(
+    rule_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> AllocationRuleMutation:
     rule = db.get(AllocationRule, rule_id)
     if rule is None:
         raise NotFoundError("Allocation rule", rule_id)
     db.delete(rule)
+    record_audit(
+        db,
+        "allocation_rule.deleted",
+        actor=user,
+        request=request,
+        target_type="allocation_rule",
+        target_id=rule_id,
+        details={"name": rule.name},
+    )
     db.commit()
     return AllocationRuleMutation(rule=None, records_updated=reapply_allocation_rules(db))

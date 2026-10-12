@@ -5,12 +5,45 @@ Base URL: `http://127.0.0.1:8000/api/v1`. The interactive OpenAPI documentation 
 The examples use PowerShell's `curl.exe` (the real curl that ships with Windows; plain `curl` in PowerShell is an alias for `Invoke-WebRequest`).
 JSON bodies are written as `'{\"key\":\"value\"}'`, which is the escaping Windows PowerShell 5.1 needs for native programs. In PowerShell 7.3 or later, remove the backslashes, or use `Invoke-RestMethod -Method Post -ContentType application/json -Body '{"key":"value"}'`.
 
+## Authentication
+
+Everything except `/health`, `/ready`, `/auth/status`, `/auth/setup`, `/auth/login` and `/imports/template.csv` requires a session token:
+
+```powershell
+# Sign in and keep the token (PowerShell)
+$session = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/auth/login `
+  -ContentType application/json -Body '{"email":"you@example.com","password":"your-password"}'
+$auth = @{ Authorization = "Bearer $($session.token)" }
+Invoke-RestMethod -Uri http://127.0.0.1:8000/api/v1/costs/summary -Headers $auth
+```
+
+With curl.exe, add `-H "Authorization: Bearer <token>"` to every example below.
+
+| Method | Path | Who | Description |
+| --- | --- | --- | --- |
+| GET | `/auth/status` | public | `{"setup_required": true}` while no user exists |
+| POST | `/auth/setup` | public | `{email, name, password}`. Creates the first **admin** (only while no user exists) and returns a session |
+| POST | `/auth/login` | public | `{email, password}` returns `{token, token_type: "bearer", expires_at, user}`. Responds 401 `invalid_credentials` or 429 `account_locked` (with `Retry-After`) |
+| GET | `/auth/me` | signed in | The current user |
+| POST | `/auth/logout` | signed in | Revokes this token (204) |
+| POST | `/auth/change-password` | signed in | `{current_password, new_password}`. Signs out your other sessions |
+| GET | `/users` | admin | List users |
+| POST | `/users` | admin | `{email, name, role, password}` |
+| PATCH | `/users/{id}` | admin | `{name?, role?, is_active?}`. You cannot demote or deactivate yourself, and the last active admin is protected (409) |
+| POST | `/users/{id}/reset-password` | admin | `{password}`. Signs out that user's sessions |
+| GET | `/audit-events?action=&limit=&offset=` | admin | Audit log, newest first |
+
+**Roles.** `GET` endpoints need any signed-in user (viewer). Changing data needs **member**. These need **admin**: deleting imports, detection settings, allocation rules, notification channels (including test sends), users and the audit log. Missing or invalid tokens return `401` (`not_authenticated` / `invalid_token`, with `WWW-Authenticate: Bearer`). An insufficient role returns `403 forbidden`.
+
+Passwords must be 10–128 characters, without leading or trailing spaces; otherwise the response is `422 weak_password`.
+
 ## Conventions
 
 - **Money** is returned as a decimal string with 4 places, e.g. `"1234.5000"`. Parse it for display only.
 - **Dates** are `YYYY-MM-DD` UTC calendar days. Timestamps are ISO 8601 UTC.
 - **Currency:** analytics endpoints take `?currency=USD`. It may be omitted when the data contains exactly one currency. With several currencies and no parameter, the API returns `400 currency_required` and lists them in `details.currencies`.
 - **Pagination:** list endpoints take `limit` and `offset` and return `{"items": [...], "total", "limit", "offset"}`.
+- **Request IDs:** every response has an `X-Request-ID` header. Send your own (letters, digits, `._-`, up to 64 characters) to correlate logs. A 500 response includes it in `error.details.request_id`.
 - **Errors** always use one envelope:
 
 ```json
@@ -20,12 +53,15 @@ JSON bodies are written as `'{\"key\":\"value\"}'`, which is the escaping Window
 | Status | `code` examples |
 | --- | --- |
 | 400 | `currency_required`, `invalid_date_range` |
+| 401 | `not_authenticated`, `invalid_token`, `invalid_credentials` |
+| 403 | `forbidden` (role too low) |
 | 404 | `not_found`, `no_data` |
 | 409 | `conflict` (duplicate file, sample already loaded), `invalid_transition` |
 | 413 | `file_too_large` |
 | 415 | `unsupported_file_type` |
-| 422 | `validation_error`, `import_validation_failed` |
-| 500 | `internal_error` (details are logged, never returned) |
+| 422 | `validation_error`, `import_validation_failed`, `weak_password` |
+| 429 | `account_locked` |
+| 500 | `internal_error` (details are logged, never returned; `details.request_id` identifies the log entry) |
 
 ## Health
 
@@ -130,10 +166,12 @@ curl.exe -X POST http://127.0.0.1:8000/api/v1/allocation-rules -H "Content-Type:
 | GET | `/incidents/counts` | | `{open, acknowledged, resolved}` |
 | GET | `/incidents/{id}` | | Incident with `detections` (all evidence) and `events` (timeline) |
 | GET | `/incidents/{id}/investigation` | | Contributors, explanations, suggestions, limitations, chart data, related incidents |
-| POST | `/incidents/{id}/acknowledge` | `{"actor": "Priya", "note": null}` | `open` → `acknowledged` |
-| POST | `/incidents/{id}/resolve` | `{"actor": "Priya", "resolution_note": "…"}` | Requires a note |
-| POST | `/incidents/{id}/reopen` | `{"actor": "Priya", "reason": null}` | `resolved` → `open` |
-| POST | `/incidents/{id}/notes` | `{"actor": "Priya", "body": "…"}` | Adds a timeline note (201) |
+| POST | `/incidents/{id}/acknowledge` | `{"note": null}` | `open` → `acknowledged` |
+| POST | `/incidents/{id}/resolve` | `{"resolution_note": "…"}` | Requires a note |
+| POST | `/incidents/{id}/reopen` | `{"reason": null}` | `resolved` → `open` |
+| POST | `/incidents/{id}/notes` | `{"body": "…"}` | Adds a timeline note (201) |
+
+The acting user recorded on the timeline is always the signed-in user. Any `actor` field in the body is ignored.
 
 Invalid transitions (for example acknowledging a resolved incident) return `409 invalid_transition`.
 

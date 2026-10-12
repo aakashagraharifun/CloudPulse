@@ -6,16 +6,18 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.core.errors import AppError, NotFoundError
 from app.db.session import get_db
-from app.models import NotificationChannel, NotificationDelivery
+from app.models import NotificationChannel, NotificationDelivery, User
 from app.schemas.anomalies import SeverityLiteral
 from app.schemas.common import APIModel, Page
+from app.services.audit import record_audit
 from app.services.notifications.service import Notification, deliver, parse_recipients
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -124,11 +126,26 @@ def list_channels(db: Session = Depends(get_db)) -> list[ChannelRead]:
     status_code=status.HTTP_201_CREATED,
     summary="Create a webhook or e-mail channel",
 )
-def create_channel(payload: ChannelInput, db: Session = Depends(get_db)) -> ChannelRead:
+def create_channel(
+    payload: ChannelInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> ChannelRead:
     if not payload.target:
         raise AppError("target is required.", code="validation_error", status_code=422)
     channel = NotificationChannel(**payload.model_dump())
     db.add(channel)
+    db.flush()
+    record_audit(
+        db,
+        "channel.created",
+        actor=user,
+        request=request,
+        target_type="notification_channel",
+        target_id=channel.id,
+        details={"name": channel.name, "type": channel.type},
+    )
     db.commit()
     db.refresh(channel)
     return _read(channel)
@@ -136,7 +153,11 @@ def create_channel(payload: ChannelInput, db: Session = Depends(get_db)) -> Chan
 
 @router.put("/channels/{channel_id}", response_model=ChannelRead, summary="Update a channel")
 def update_channel(
-    channel_id: int, payload: ChannelInput, db: Session = Depends(get_db)
+    channel_id: int,
+    payload: ChannelInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
 ) -> ChannelRead:
     channel = _get(db, channel_id)
     data = payload.model_dump()
@@ -150,14 +171,39 @@ def update_channel(
         data.pop("target")
     for key, value in data.items():
         setattr(channel, key, value)
+    record_audit(
+        db,
+        "channel.updated",
+        actor=user,
+        request=request,
+        target_type="notification_channel",
+        target_id=channel_id,
+        details={k: v for k, v in data.items() if k != "target"}
+        | {"target_changed": "target" in data},
+    )
     db.commit()
     db.refresh(channel)
     return _read(channel)
 
 
 @router.delete("/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_channel(channel_id: int, db: Session = Depends(get_db)) -> Response:
-    db.delete(_get(db, channel_id))
+def delete_channel(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> Response:
+    channel = _get(db, channel_id)
+    db.delete(channel)
+    record_audit(
+        db,
+        "channel.deleted",
+        actor=user,
+        request=request,
+        target_type="notification_channel",
+        target_id=channel_id,
+        details={"name": channel.name},
+    )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -167,7 +213,9 @@ def delete_channel(channel_id: int, db: Session = Depends(get_db)) -> Response:
     response_model=DeliveryRead,
     summary="Send a test message now and return the delivery outcome",
 )
-def test_channel(channel_id: int, db: Session = Depends(get_db)) -> DeliveryRead:
+def test_channel(
+    channel_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+) -> DeliveryRead:
     channel = _get(db, channel_id)
     notification = Notification(
         event_type="test",

@@ -4,16 +4,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_member
 from app.core.errors import NotFoundError
 from app.db.session import get_db
-from app.models import Budget, BudgetAlert
+from app.models import Budget, BudgetAlert, User
 from app.schemas.anomalies import ScopeLiteral
 from app.schemas.common import APIModel, Money, Page
+from app.services.audit import record_audit
 from app.services.budgeting.service import budget_status, evaluate_budgets
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
@@ -110,9 +112,24 @@ def list_budgets(db: Session = Depends(get_db)) -> list[BudgetStatusRead]:
 @router.post(
     "", response_model=BudgetStatusRead, status_code=status.HTTP_201_CREATED, summary="Create"
 )
-def create_budget(payload: BudgetInput, db: Session = Depends(get_db)) -> BudgetStatusRead:
+def create_budget(
+    payload: BudgetInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
+) -> BudgetStatusRead:
     budget = Budget(**payload.model_dump())
     db.add(budget)
+    db.flush()
+    record_audit(
+        db,
+        "budget.created",
+        actor=user,
+        request=request,
+        target_type="budget",
+        target_id=budget.id,
+        details=payload.model_dump(mode="json"),
+    )
     db.commit()
     db.refresh(budget)
     return BudgetStatusRead.model_validate(budget_status(db, budget))
@@ -147,7 +164,9 @@ def list_alerts(
     response_model=EvaluationResult,
     summary="Check every budget now and send any due threshold alerts",
 )
-def evaluate_now(db: Session = Depends(get_db)) -> EvaluationResult:
+def evaluate_now(
+    db: Session = Depends(get_db), _: User = Depends(require_member)
+) -> EvaluationResult:
     return EvaluationResult(notifications_sent=evaluate_budgets(db))
 
 
@@ -158,18 +177,46 @@ def get_budget(budget_id: int, db: Session = Depends(get_db)) -> BudgetStatusRea
 
 @router.put("/{budget_id}", response_model=BudgetStatusRead)
 def update_budget(
-    budget_id: int, payload: BudgetInput, db: Session = Depends(get_db)
+    budget_id: int,
+    payload: BudgetInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
 ) -> BudgetStatusRead:
     budget = _get(db, budget_id)
     for key, value in payload.model_dump().items():
         setattr(budget, key, value)
+    record_audit(
+        db,
+        "budget.updated",
+        actor=user,
+        request=request,
+        target_type="budget",
+        target_id=budget_id,
+        details=payload.model_dump(mode="json"),
+    )
     db.commit()
     db.refresh(budget)
     return BudgetStatusRead.model_validate(budget_status(db, budget))
 
 
 @router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_budget(budget_id: int, db: Session = Depends(get_db)) -> Response:
-    db.delete(_get(db, budget_id))
+def delete_budget(
+    budget_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_member),
+) -> Response:
+    budget = _get(db, budget_id)
+    db.delete(budget)
+    record_audit(
+        db,
+        "budget.deleted",
+        actor=user,
+        request=request,
+        target_type="budget",
+        target_id=budget_id,
+        details={"name": budget.name},
+    )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

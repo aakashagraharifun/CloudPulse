@@ -11,12 +11,15 @@ from app.models.anomaly import (
     IncidentStatus,
     Severity,
 )
+from app.models.auth import ROLE_RANK, AuditEvent, User, UserRole, UserSession
 from app.models.billing import BillingImport, BillingRecord, ImportSource, ImportStatus
 from app.models.budget import Budget, BudgetAlert, NotificationChannel, NotificationDelivery
 
 __all__ = [
     "AllocationRule",
+    "ROLE_RANK",
     "AnomalyDetection",
+    "AuditEvent",
     "Base",
     "BillingImport",
     "BillingRecord",
@@ -34,4 +37,7 @@ __all__ = [
     "NotificationChannel",
     "NotificationDelivery",
     "Severity",
+    "User",
+    "UserRole",
+    "UserSession",
 ]

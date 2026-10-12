@@ -4,9 +4,13 @@
  * Monetary amounts arrive as decimal strings (e.g. "1234.5000") so no precision
  * is lost in JSON; they are converted to numbers only for display and charts.
  */
+import { authToken } from "@/lib/auth-token";
 import { API_BASE_URL } from "@/lib/config";
 
 export type Money = string;
+
+/** Fired when the API rejects the session; the dashboard then redirects to sign-in. */
+export const UNAUTHORIZED_EVENT = "cloudpulse:unauthorized";
 
 export class ApiError extends Error {
   constructor(
@@ -24,6 +28,7 @@ type ErrorEnvelope = { error?: { code?: string; message?: string; details?: unkn
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
+  const token = authToken.get();
   try {
     response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
       ...init,
@@ -32,6 +37,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         ...(init.body && !(init.body instanceof FormData)
           ? { "Content-Type": "application/json" }
           : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },
     });
@@ -47,6 +53,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const envelope = (body ?? {}) as ErrorEnvelope;
+    const code = envelope.error?.code;
+    if (response.status === 401 && token && (code === "invalid_token" || code === "not_authenticated")) {
+      authToken.set(null);
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
     throw new ApiError(
       envelope.error?.message ?? `Request failed with status ${response.status}`,
       response.status,
@@ -66,6 +77,8 @@ export const api = {
     }),
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+  patch: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
   /** DELETE for endpoints that return a JSON body (e.g. allocation rules). */
   deleteWithBody: <T>(path: string) => request<T>(path, { method: "DELETE" }),
@@ -110,6 +123,40 @@ export type Dimension =
   | "project"
   | "environment";
 export type ScopeType = "total" | Dimension;
+
+// --- auth & users --------------------------------------------------------------
+
+export type Role = "viewer" | "member" | "admin";
+
+export type User = {
+  id: number;
+  email: string;
+  name: string;
+  role: Role;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+};
+
+export type SessionResponse = {
+  token: string;
+  token_type: "bearer";
+  expires_at: string;
+  user: User;
+};
+
+export type AuditEvent = {
+  id: number;
+  actor_user_id: number | null;
+  actor_email: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown> | null;
+  ip_address: string | null;
+  request_id: string | null;
+  created_at: string;
+};
 
 // --- health ------------------------------------------------------------------
 

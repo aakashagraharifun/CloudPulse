@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
 import { Button } from "@/components/ui/primitives";
 import { api, errorMessage, type ImportDetail } from "@/lib/api";
@@ -15,6 +16,7 @@ export function LoadSampleButton({
   onLoaded?: (result: ImportDetail) => void;
 }) {
   const { refresh } = useDataStatus();
+  const { can } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +34,9 @@ export function LoadSampleButton({
     }
   }
 
+  if (!can("member")) {
+    return <p className="text-sm text-slate-500">Ask a member or admin to load data.</p>;
+  }
   return (
     <div className="flex flex-col items-center gap-2">
       <Button variant={variant} onClick={load} disabled={busy}>

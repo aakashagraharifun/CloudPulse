@@ -39,6 +39,8 @@ docker compose --profile app down            # stop and remove containers (data 
 | redis | 127.0.0.1:6379 | Volume `redis_data` |
 | mailpit | http://127.0.0.1:8025 | Inbox for e-mail alerts (SMTP on 1025) |
 
+On the first visit to http://localhost:3000/dashboard you are asked to **create the admin account**. Add other users under **Settings → Users**.
+
 **What `--profile app` does:** the API, worker, beat and frontend services belong to the `app` profile, so a plain `docker compose up -d` starts only the infrastructure (Postgres, Redis, Mailpit). That is what you want for option B.
 
 After code changes, rebuild with `docker compose --profile app up -d --build`.
@@ -75,7 +77,7 @@ The worker is optional for local use: imports already run detection and budget c
 
 ```powershell
 # Backend (from backend/, venv active)
-pytest                      # 114 tests; uses database "cloudpulse_test" (auto-created)
+pytest                      # 186 tests; uses database "cloudpulse_test" (auto-created)
 ruff check .                # lint
 ruff format --check .       # formatting (run "ruff format ." to fix)
 
@@ -85,7 +87,7 @@ npm run typecheck           # regenerates Next.js route types, then runs tsc
 npm run build
 ```
 
-**How the backend tests work:** `tests/conftest.py` creates a separate `cloudpulse_test` database on the same Postgres server and builds the schema by running the real Alembic migrations, which also tests the migrations. It truncates all tables before each test. Your development data in `cloudpulse` is never touched. Docker's Postgres must be running.
+**How the backend tests work:** `tests/conftest.py` creates a separate `cloudpulse_test` database on the same Postgres server and builds the schema by running the real Alembic migrations, which also tests the migrations. It empties all tables before each test. Your development data in `cloudpulse` is never touched. Docker's Postgres must be running.
 
 Test coverage by area:
 
@@ -97,8 +99,61 @@ Test coverage by area:
 | `test_detection_engine.py` | Thresholds, z gate, minimum history, new spend, credits, day-of-week baselines, severity |
 | `test_incidents.py` | Exact incidents from the sample data, de-duplication, resolved incidents, workflow API, investigation |
 | `test_budgets_notifications.py` | Periods, utilization, alert-once policy, re-notify policy, failed or unreachable channels (real local HTTP server) |
+| `test_auth.py` | Setup, login, lockout, logout, expiry, password changes, user admin safeguards, audit log, request IDs, the recovery CLI, and an **access-policy test that calls every API route as anonymous, viewer, member and admin** |
 
-## 4. Database migrations
+### End-to-end tests (Playwright)
+
+The e2e tests drive a real browser through the critical journeys: sign-in and sign-out, first-run setup, CSV validation errors, analytics and drill-down, the incident workflow, budgets, and viewer restrictions. They need a running API and frontend, and they **change data**, so point them at a throwaway database:
+
+```powershell
+# 1. A separate database (once)
+docker exec cloudpulse-postgres createdb -U cloudpulse cloudpulse_e2e
+
+# 2. API on port 8100 using it (terminal A, from backend/, venv active)
+$env:POSTGRES_DB = "cloudpulse_e2e"
+$env:CORS_ORIGINS = '["http://localhost:3100","http://127.0.0.1:3100"]'
+alembic upgrade head
+uvicorn app.main:app --host 127.0.0.1 --port 8100
+
+# 3. Production frontend on port 3100 (terminal B, from frontend/)
+$env:NEXT_PUBLIC_API_URL = "http://127.0.0.1:8100"
+npm run build
+$env:PORT = "3100"; npm run start:standalone
+
+# 4. Run the tests (terminal C, from frontend/)
+npx playwright install chromium        # once
+$env:E2E_BASE_URL = "http://127.0.0.1:3100"; $env:E2E_API_URL = "http://127.0.0.1:8100"
+npm run test:e2e
+```
+
+On an empty database the tests create the admin `e2e-admin@example.com` themselves. On a database that already has users, set `E2E_ADMIN_EMAIL` and `E2E_ADMIN_PASSWORD`. The incident-workflow test resolves one open incident per run and skips itself once none are left.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+1. **No secrets committed:** fails if any `.env` file is tracked.
+2. **Backend:** ruff lint and format, `alembic upgrade head` plus `alembic check`, then pytest against PostgreSQL 16 and Redis 7 service containers.
+3. **Frontend:** `npm ci`, lint, typecheck, production build.
+4. **End-to-end:** starts the API and the production frontend in the runner, then runs Playwright. On failure the report and server logs are uploaded as an artifact.
+5. **Docker:** validates `docker-compose.yml` and builds every image.
+
+CI uses throwaway passwords defined in the workflow. It never uses real credentials and deploys nothing.
+
+## 4. Users and account recovery
+
+- The first visitor creates the admin. Admins add users and set roles under **Settings → Users** (viewer, member, admin) and can reset passwords there.
+- If the only admin is locked out or forgot their password:
+  ```powershell
+  cd backend; .\.venv\Scripts\Activate.ps1
+  python -m scripts.manage_users reset-password --email you@example.com   # prompts for the new password
+  python -m scripts.manage_users create-admin --email ops@example.com --name "Ops"
+  # In Docker:
+  docker compose exec api python -m scripts.manage_users reset-password --email you@example.com
+  ```
+- Five failed sign-ins lock an account for 15 minutes (configurable in `.env`). A password reset also unlocks it.
+
+## 5. Database migrations
 
 ```powershell
 cd backend; .\.venv\Scripts\Activate.ps1
@@ -110,7 +165,7 @@ alembic downgrade -1                                   # undo the last migration
 
 Always read an autogenerated migration before applying it. Postgres limits identifier names to 63 characters, so give long constraints an explicit `name=`.
 
-## 5. Sample data
+## 6. Sample data
 
 - In the UI: **Imports → Load sample data** generates 90 days ending yesterday and marks the import as sample data.
 - From the command line:
@@ -123,7 +178,7 @@ Always read an autogenerated migration before applying it. Postgres limits ident
 
 To start over, delete the imports on the Imports page. Their billing records are deleted with them.
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
@@ -139,8 +194,11 @@ To start over, delete the imports on the Imports page. Their billing records are
 | An e-mail "sent" but nothing arrives | Locally, e-mail goes to Mailpit: open http://127.0.0.1:8025 |
 | `npm audit` reports high-severity issues in `braces` | They come from the dev-only ESLint toolchain (`eslint-config-next`). The suggested `--force` fix downgrades Next to 14, so it is intentionally not applied |
 | A Next.js warning mentions a `pnpm-lock.yaml` outside the repository | Harmless. A lock file in your user folder is ignored |
+| The dashboard keeps returning to the sign-in page | Your session expired (12 h) or was revoked; sign in again. If the API's database was reset, run first-run setup again |
+| "Too many failed sign-in attempts" | Wait 15 minutes, or reset the password with `scripts.manage_users` (this also unlocks the account) |
+| A 500 error mentions a request ID | Search the API logs for that ID (`docker compose logs api` or the uvicorn console) to find the stack trace |
 
-## 7. Conventions
+## 8. Conventions
 
 - Python: ruff (lint + format), line length 100, type hints throughout. FastAPI routes stay thin and logic lives in `services/`.
 - TypeScript strict mode, the ESLint Next.js config, and Tailwind tokens from `globals.css` (see [design.md](design.md)).

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { useAuth } from "@/components/shell/auth";
 import {
   Button,
   Card,
@@ -47,6 +48,7 @@ const TABS: { id: IncidentStatus | "all"; label: string }[] = [
 ];
 
 export default function IncidentsPage() {
+  const { can } = useAuth();
   const [status, setStatus] = useState<IncidentStatus | "all">("open");
   const [severity, setSeverity] = useState<Severity | "">("");
   const [offset, setOffset] = useState(0);
@@ -82,9 +84,11 @@ export default function IncidentsPage() {
         title="Incidents"
         description="Unusual cost increases found by statistical detection. Consecutive anomalous days for the same scope are grouped into one incident."
         actions={
-          <Button onClick={runDetection} disabled={running}>
-            {running ? "Running detection…" : "Run detection now"}
-          </Button>
+          can("member") ? (
+            <Button onClick={runDetection} disabled={running}>
+              {running ? "Running detection…" : "Run detection now"}
+            </Button>
+          ) : undefined
         }
       />
 

@@ -6,6 +6,7 @@ PostgreSQL 16, managed with Alembic migrations in `backend/alembic/versions/`:
 | --- | --- |
 | `0001` | `billing_imports`, `billing_records`, `allocation_rules` |
 | `0002` | `detection_settings`, `detection_runs`, `anomaly_detections`, `incidents`, `incident_events`, `budgets`, `budget_alerts`, `notification_channels`, `notification_deliveries` |
+| `0003` | `users`, `user_sessions`, `audit_events` |
 
 Conventions:
 - Money is `NUMERIC(18,8)` and quantities are `NUMERIC(24,8)`. Floating point is never used for money.
@@ -26,6 +27,9 @@ incidents      1───* incident_events           (ON DELETE CASCADE)
 
 budgets        1───* budget_alerts             (ON DELETE CASCADE)
 notification_channels 1───* notification_deliveries (ON DELETE SET NULL, history kept)
+
+users          1───* user_sessions             (ON DELETE CASCADE)
+users          1───* audit_events              (actor; ON DELETE SET NULL, e-mail kept)
 ```
 
 ## Billing
@@ -134,6 +138,23 @@ One row per threshold crossing. **UNIQUE** `(budget_id, period_start, threshold_
 ### `notification_deliveries`
 Every attempt to notify a channel: `channel_id` (`SET NULL` on channel delete, so history is kept), `channel_name`, `channel_type`, `event_type`, `event_key`, `subject`, `body`, `payload` (JSONB), `status` (`pending`/`sent`/`failed`), `attempts`, `last_error`, timestamps. **UNIQUE** `(channel_id, event_key)` means the same event is never delivered twice to the same channel.
 
-## Not yet modelled
+## Users, sessions and audit
 
-Users, organizations and authentication are planned for Milestone 8. Every table is currently single-tenant.
+### `users`
+| Column | Notes |
+| --- | --- |
+| `email` | **UNIQUE**; `CHECK (email = lower(email))` so look-ups are case-insensitive |
+| `name` | Display name, used as the actor on incident actions |
+| `password_hash` | `scrypt$n$r$p$salt$hash`; never the password |
+| `role` | `viewer` \| `member` \| `admin` (`CHECK`) |
+| `is_active` | Deactivated users cannot sign in and lose their sessions |
+| `failed_login_count`, `locked_until` | Lockout after repeated failures |
+| `last_login_at`, timestamps | |
+
+### `user_sessions`
+`user_id` (FK, cascade), `token_hash` (SHA-256 of the bearer token, **UNIQUE**), `created_at`, `expires_at`, `last_used_at` (updated at most every 5 minutes), `revoked_at`, `user_agent`, `ip_address`. Sessions that expired or were revoked more than 7 days ago are purged daily by Celery.
+
+### `audit_events`
+`actor_user_id` (FK, `SET NULL`), `actor_email` (a snapshot, also used for failed logins with no user), `action` (indexed, e.g. `import.deleted`), `target_type`, `target_id`, `details` (JSONB), `ip_address`, `request_id`, `created_at` (indexed).
+
+The data model is a **single workspace**: billing data is not partitioned per user or organization (see architecture.md, "Authentication and authorization").

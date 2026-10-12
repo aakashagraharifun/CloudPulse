@@ -209,22 +209,23 @@ def test_incident_api_workflow(client: TestClient, db: Session, sample_loaded: N
     assert detail["detections"] and detail["events"][0]["event_type"] == "created"
     assert client.get(f"/api/v1/incidents/{incident_id}/investigation").status_code == 200
 
-    ack = client.post(f"/api/v1/incidents/{incident_id}/acknowledge", json={"actor": "dev"})
-    assert ack.json()["status"] == "acknowledged" and ack.json()["acknowledged_by"] == "dev"
-    again = client.post(f"/api/v1/incidents/{incident_id}/acknowledge", json={"actor": "dev"})
+    ack = client.post(f"/api/v1/incidents/{incident_id}/acknowledge", json={})
+    # The actor is the signed-in user, never a name supplied in the body.
+    assert ack.json()["status"] == "acknowledged"
+    assert ack.json()["acknowledged_by"] == "Test Admin"
+    again = client.post(f"/api/v1/incidents/{incident_id}/acknowledge", json={})
     assert again.status_code == 409
 
     note = client.post(
-        f"/api/v1/incidents/{incident_id}/notes", json={"actor": "dev", "body": "Checking"}
+        f"/api/v1/incidents/{incident_id}/notes", json={"actor": "spoofed", "body": "Checking"}
     )
     assert note.status_code == 201
-    blank = client.post(
-        f"/api/v1/incidents/{incident_id}/resolve", json={"actor": "dev", "resolution_note": " "}
-    )
+    assert note.json()["actor"] == "Test Admin"  # a spoofed "actor" field is ignored
+    blank = client.post(f"/api/v1/incidents/{incident_id}/resolve", json={"resolution_note": " "})
     assert blank.status_code == 422
     resolved = client.post(
         f"/api/v1/incidents/{incident_id}/resolve",
-        json={"actor": "dev", "resolution_note": "Test instance terminated."},
+        json={"resolution_note": "Test instance terminated."},
     ).json()
     assert resolved["status"] == "resolved"
     assert [e["event_type"] for e in resolved["events"]][-3:] == [
@@ -232,7 +233,7 @@ def test_incident_api_workflow(client: TestClient, db: Session, sample_loaded: N
         "note",
         "resolved",
     ]
-    reopened = client.post(f"/api/v1/incidents/{incident_id}/reopen", json={"actor": "dev"})
+    reopened = client.post(f"/api/v1/incidents/{incident_id}/reopen", json={})
     assert reopened.json()["status"] == "open"
 
 

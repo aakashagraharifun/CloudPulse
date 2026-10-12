@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { IncidentChart } from "@/components/charts/charts";
+import { useAuth } from "@/components/shell/auth";
 import {
   Badge,
   Button,
@@ -40,7 +41,7 @@ import {
   scopeLabel,
   toNumber,
 } from "@/lib/format";
-import { useApi, useStoredValue } from "@/lib/hooks";
+import { useApi } from "@/lib/hooks";
 
 const DRIVER_LABEL: Record<string, string> = {
   usage: "Usage-driven",
@@ -416,7 +417,7 @@ function DetectionEvidence({ incident }: { incident: IncidentDetail }) {
 }
 
 function Actions({ incident, onChanged }: { incident: IncidentDetail; onChanged: () => void }) {
-  const [actor, setActor] = useStoredValue("cloudpulse.actor", "");
+  const { user, can } = useAuth();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -426,7 +427,7 @@ function Actions({ incident, onChanged }: { incident: IncidentDetail; onChanged:
     setBusy(true);
     setError(null);
     try {
-      await api.post(`/incidents/${incident.id}/${path}`, { actor: actor.trim(), ...body });
+      await api.post(`/incidents/${incident.id}/${path}`, body);
       // Clear only what was submitted; keep anything typed while the request ran.
       setText((current) => (current === submitted ? "" : current));
       onChanged();
@@ -442,20 +443,10 @@ function Actions({ incident, onChanged }: { incident: IncidentDetail; onChanged:
     void act("notes", { body: text });
   }
 
-  const needsActor = !actor.trim();
+  const needsActor = !can("member");
   return (
-    <Card title="Response">
+    <Card title="Response" description={`Actions are recorded as ${user.name}.`}>
       <div className="space-y-3">
-        <Field label="Your name" htmlFor="actor" hint="Recorded on actions and notes (stored in this browser).">
-          <input
-            id="actor"
-            className={inputClass}
-            value={actor}
-            maxLength={80}
-            onChange={(e) => setActor(e.target.value)}
-            placeholder="e.g. Priya"
-          />
-        </Field>
         <Field label="Note or resolution" htmlFor="incident-text">
           <textarea
             id="incident-text"
@@ -468,7 +459,9 @@ function Actions({ incident, onChanged }: { incident: IncidentDetail; onChanged:
           />
         </Field>
         {error && <Notice tone="error">{error}</Notice>}
-        {needsActor && <p className="text-xs text-slate-500">Enter your name to enable actions.</p>}
+        {needsActor && (
+          <p className="text-xs text-slate-500">You have view-only access; members and admins can respond.</p>
+        )}
         <div className="flex flex-wrap gap-2">
           {incident.status === "open" && (
             <Button disabled={busy || needsActor} onClick={() => act("acknowledge", { note: text.trim() || null })}>

@@ -149,20 +149,14 @@ def _strip(value: str) -> str:
     return value
 
 
-class ActorInput(APIModel):
-    actor: str = Field(min_length=1, max_length=80, description="Who is taking the action")
-
-    @field_validator("actor")
-    @classmethod
-    def _actor(cls, value: str) -> str:
-        return _strip(value)
+# The acting user is always the signed-in user; it is never taken from the body.
 
 
-class AcknowledgeInput(ActorInput):
+class AcknowledgeInput(APIModel):
     note: str | None = Field(None, max_length=5000)
 
 
-class ResolveInput(ActorInput):
+class ResolveInput(APIModel):
     resolution_note: str = Field(min_length=1, max_length=5000)
 
     @field_validator("resolution_note")
@@ -171,11 +165,11 @@ class ResolveInput(ActorInput):
         return _strip(value)
 
 
-class ReopenInput(ActorInput):
+class ReopenInput(APIModel):
     reason: str | None = Field(None, max_length=5000)
 
 
-class NoteInput(ActorInput):
+class NoteInput(APIModel):
     body: str = Field(min_length=1, max_length=5000)
 
     @field_validator("body")

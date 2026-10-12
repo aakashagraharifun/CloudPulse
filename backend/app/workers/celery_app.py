@@ -36,6 +36,10 @@ celery_app.conf.update(
             "task": "cloudpulse.evaluate_budgets",
             "schedule": crontab(minute=5),
         },
+        "purge-expired-sessions": {
+            "task": "cloudpulse.purge_expired_sessions",
+            "schedule": crontab(minute=30, hour=3),
+        },
         "retry-failed-notifications": {
             "task": "cloudpulse.retry_failed_notifications",
             "schedule": crontab(minute="*/10"),

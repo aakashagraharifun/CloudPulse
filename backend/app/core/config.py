@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # CORS: the browser calls the API directly from the Next.js dev server.
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    # Authentication
+    session_ttl_hours: int = 12
+    auth_max_failed_logins: int = 5
+    auth_lockout_minutes: int = 15
+
     # Billing ingestion limits
     max_upload_bytes: int = 20 * 1024 * 1024
     max_upload_rows: int = 500_000

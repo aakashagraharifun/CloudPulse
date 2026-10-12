@@ -32,3 +32,6 @@ test-results/
 Thumbs.db
 .vscode/
 .idea/
+
+# Playwright auth state (contains session tokens)
+frontend/e2e/.auth/

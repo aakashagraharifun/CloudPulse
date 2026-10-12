@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
+import { useAuth } from "@/components/shell/auth";
 import {
   Badge,
   Button,
@@ -20,6 +21,7 @@ import { formatDateTime } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 
 export function NotificationChannels() {
+  const admin = useAuth().can("admin");
   const channels = useApi<Channel[]>("/notifications/channels");
   const [offset, setOffset] = useState(0);
   const deliveries = useApi<Page<Delivery>>(`/notifications/deliveries${qs({ limit: 10, offset })}`);
@@ -77,7 +79,7 @@ export function NotificationChannels() {
     <Card
       title="Notifications"
       description="Budget threshold alerts and new incidents are sent to every enabled channel. Failures are recorded and retried; they never block imports or detection."
-      action={!adding && <Button size="sm" onClick={() => setAdding(true)}>Add channel</Button>}
+      action={admin && !adding && <Button size="sm" onClick={() => setAdding(true)}>Add channel</Button>}
     >
       {adding && (
         <div className="mb-5">
@@ -123,6 +125,7 @@ export function NotificationChannels() {
                     .join(" · ") || "No events selected"}
                 </p>
               </div>
+              {admin && (
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" disabled={busyId === channel.id} onClick={() => test(channel)}>
                   {busyId === channel.id ? "Working…" : "Send test"}
@@ -134,6 +137,7 @@ export function NotificationChannels() {
                   Delete
                 </Button>
               </div>
+              )}
             </li>
           ))}
         </ul>

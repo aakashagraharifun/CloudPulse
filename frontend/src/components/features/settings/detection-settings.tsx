@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
+import { useAuth } from "@/components/shell/auth";
 import {
   Button,
   Card,
@@ -79,6 +80,7 @@ export function DetectionSettingsForm() {
 }
 
 function SettingsForm({ initial, onSaved }: { initial: DetectionSettings; onSaved: () => void }) {
+  const readOnly = !useAuth().can("admin");
   const [values, setValues] = useState<Record<NumericKey, string>>(() => {
     const entries = GROUPS.flatMap((g) => g.fields).map((f) => [f.key, String(Number(initial[f.key]))]);
     return Object.fromEntries(entries) as Record<NumericKey, string>;
@@ -115,7 +117,8 @@ function SettingsForm({ initial, onSaved }: { initial: DetectionSettings; onSave
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    <form onSubmit={submit}>
+      <fieldset disabled={readOnly} className="space-y-6">
       {GROUPS.map((group) => (
         <fieldset key={group.title}>
           <legend className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{group.title}</legend>
@@ -158,11 +161,14 @@ function SettingsForm({ initial, onSaved }: { initial: DetectionSettings; onSave
       </fieldset>
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={busy || scopes.length === 0}>
-          {busy ? "Saving…" : "Save detection settings"}
-        </Button>
+        {!readOnly && (
+          <Button type="submit" disabled={busy || scopes.length === 0}>
+            {busy ? "Saving…" : "Save detection settings"}
+          </Button>
+        )}
         <span className="text-xs text-slate-500">Last updated {formatDateTime(initial.updated_at)}</span>
       </div>
+      </fieldset>
     </form>
   );
 }

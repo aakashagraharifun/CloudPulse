@@ -2,6 +2,7 @@
 
 from app.db.session import get_sessionmaker
 from app.services.anomaly_detection.service import run_detection
+from app.services.auth.service import purge_expired_sessions
 from app.services.budgeting.service import evaluate_budgets
 from app.services.notifications.service import retry_failed
 from app.services.pipeline import notify_new_incidents
@@ -26,3 +27,9 @@ def evaluate_budgets_task() -> dict:
 def retry_failed_notifications_task() -> dict:
     with get_sessionmaker()() as db:
         return {"retried": retry_failed(db)}
+
+
+@celery_app.task(name="cloudpulse.purge_expired_sessions")
+def purge_expired_sessions_task() -> dict:
+    with get_sessionmaker()() as db:
+        return {"deleted": purge_expired_sessions(db)}

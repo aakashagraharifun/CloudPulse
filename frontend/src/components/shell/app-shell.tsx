@@ -4,9 +4,10 @@ import Link from "next/link";
 import { Suspense, useState, type ReactNode } from "react";
 
 import { Logo } from "@/components/brand/logo";
+import { AuthProvider, useAuth } from "@/components/shell/auth";
 import { DataStatusProvider, useDataStatus } from "@/components/shell/data-status";
 import { NavLinks, NavLinksFallback } from "@/components/shell/nav";
-import { Badge, cx, inputClass } from "@/components/ui/primitives";
+import { Badge, Button, cx, inputClass } from "@/components/ui/primitives";
 import { errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
@@ -62,7 +63,44 @@ function DataStatusBar() {
   );
 }
 
+function UserBlock() {
+  const { user, signOut } = useAuth();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="rounded-lg bg-slate-50 p-3">
+      <p className="truncate text-sm font-medium text-slate-900" title={user.email}>
+        {user.name}
+      </p>
+      <p className="truncate text-xs text-slate-500">{user.email}</p>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <Badge tone={user.role === "admin" ? "brand" : "neutral"} className="capitalize">
+          {user.role}
+        </Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void signOut();
+          }}
+        >
+          {busy ? "Signing out…" : "Sign out"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <AuthProvider>
+      <Shell>{children}</Shell>
+    </AuthProvider>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -77,8 +115,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavLinks />
             </Suspense>
           </nav>
-          <div className="mt-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-            Local mode · no cloud credentials required
+          <div className="mt-auto">
+            <UserBlock />
           </div>
         </aside>
 
@@ -109,6 +147,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Suspense fallback={<NavLinksFallback />}>
                   <NavLinks onNavigate={() => setMenuOpen(false)} />
                 </Suspense>
+                <div className="mt-3">
+                  <UserBlock />
+                </div>
               </nav>
             )}
           </header>

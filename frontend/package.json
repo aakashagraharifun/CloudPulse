@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:e2e": "playwright test",
+    "start:standalone": "node scripts/start-standalone.mjs"
   },
   "dependencies": {
     "geist": "^1.7.2",

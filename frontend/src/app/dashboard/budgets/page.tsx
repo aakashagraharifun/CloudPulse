@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
+import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
 import {
   Badge,
@@ -51,6 +52,7 @@ const STATE_BADGE = {
 } as const;
 
 export default function BudgetsPage() {
+  const { can } = useAuth();
   const budgets = useApi<BudgetStatus[]>("/budgets");
   const [alertsOffset, setAlertsOffset] = useState(0);
   const alerts = useApi<Page<BudgetAlert>>(`/budgets/alerts${qs({ limit: 10, offset: alertsOffset })}`);
@@ -100,12 +102,14 @@ export default function BudgetsPage() {
         title="Budgets"
         description="Track spend against monthly, quarterly or yearly budgets. Each threshold alerts once per budget period."
         actions={
-          <>
-            <Button variant="secondary" onClick={checkNow} disabled={checking}>
-              {checking ? "Checking…" : "Check budgets now"}
-            </Button>
-            <Button onClick={() => setEditing("new")}>New budget</Button>
-          </>
+          can("member") ? (
+            <>
+              <Button variant="secondary" onClick={checkNow} disabled={checking}>
+                {checking ? "Checking…" : "Check budgets now"}
+              </Button>
+              <Button onClick={() => setEditing("new")}>New budget</Button>
+            </>
+          ) : undefined
         }
       />
       {notice && (
@@ -138,13 +142,19 @@ export default function BudgetsPage() {
           <EmptyState
             title="No budgets yet"
             description="Create a budget to see utilization, a projection to period end, and threshold alerts."
-            action={<Button onClick={() => setEditing("new")}>New budget</Button>}
+            action={can("member") ? <Button onClick={() => setEditing("new")}>New budget</Button> : undefined}
           />
         </Card>
       ) : (
         <div className={cx("grid grid-cols-1 gap-4 lg:grid-cols-2", budgets.loading && "opacity-60")}>
           {budgets.data.map((status) => (
-            <BudgetCard key={status.budget.id} status={status} onEdit={() => setEditing(status)} onDelete={() => remove(status)} />
+            <BudgetCard
+              key={status.budget.id}
+              status={status}
+              canEdit={can("member")}
+              onEdit={() => setEditing(status)}
+              onDelete={() => remove(status)}
+            />
           ))}
         </div>
       )}
@@ -201,7 +211,17 @@ export default function BudgetsPage() {
   );
 }
 
-function BudgetCard({ status, onEdit, onDelete }: { status: BudgetStatus; onEdit: () => void; onDelete: () => void }) {
+function BudgetCard({
+  status,
+  canEdit,
+  onEdit,
+  onDelete,
+}: {
+  status: BudgetStatus;
+  canEdit: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const { budget } = status;
   const pct = toNumber(status.utilization_pct);
   const badge = STATE_BADGE[status.state];
@@ -257,14 +277,16 @@ function BudgetCard({ status, onEdit, onDelete }: { status: BudgetStatus; onEdit
         </div>
       </dl>
       <p className="mt-3 text-xs text-slate-500">{status.message}</p>
-      <div className="mt-4 flex gap-2">
-        <Button variant="secondary" size="sm" onClick={onEdit}>
-          Edit
-        </Button>
-        <Button variant="danger" size="sm" onClick={onDelete}>
-          Delete
-        </Button>
-      </div>
+      {canEdit && (
+        <div className="mt-4 flex gap-2">
+          <Button variant="secondary" size="sm" onClick={onEdit}>
+            Edit
+          </Button>
+          <Button variant="danger" size="sm" onClick={onDelete}>
+            Delete
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

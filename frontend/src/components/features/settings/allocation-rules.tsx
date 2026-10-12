@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
+import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
 import {
   Badge,
@@ -29,6 +30,7 @@ import { useApi } from "@/lib/hooks";
 const MATCH_FIELDS: MatchField[] = ["service", "resource_id", "account_id", "region", "usage_type", "provider"];
 
 export function AllocationRules() {
+  const admin = useAuth().can("admin");
   const rules = useApi<AllocationRule[]>("/allocation-rules");
   const { refresh } = useDataStatus();
   const [adding, setAdding] = useState(false);
@@ -62,7 +64,7 @@ export function AllocationRules() {
     <Card
       title="Cost allocation rules"
       description="Attribute costs that have no project or environment tag. Source tags always win; rules are applied in priority order (lowest first)."
-      action={!adding && <Button size="sm" onClick={() => setAdding(true)}>Add rule</Button>}
+      action={admin && !adding && <Button size="sm" onClick={() => setAdding(true)}>Add rule</Button>}
     >
       {adding && (
         <div className="mb-5">
@@ -117,12 +119,14 @@ export function AllocationRules() {
                     {[rule.project && `project ${rule.project}`, rule.environment && `environment ${rule.environment}`].filter(Boolean).join(", ")}
                   </td>
                   <td className="px-4 py-2.5">
+                    {admin && (
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="sm" onClick={() => toggle(rule)}>
                         {rule.enabled ? "Disable" : "Enable"}
                       </Button>
                       <DeleteRuleButton rule={rule} onDeleted={(result) => done(result, "deleted")} onError={(text) => setMessage({ tone: "error", text })} />
                     </div>
+                    )}
                   </td>
                 </tr>
               ))}

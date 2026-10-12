@@ -17,7 +17,7 @@ CloudPulse is a small modular monolith: one FastAPI application, one Celery work
 | Component | Responsibility |
 | --- | --- |
 | **frontend** (`frontend/`) | Landing page and dashboard. Calls the API directly from the browser (`NEXT_PUBLIC_API_URL`). Holds no business logic. |
-| **API** (`backend/app/main.py`) | REST endpoints under `/api/v1`, validation, the consistent error envelope, OpenAPI docs. |
+| **API** (`backend/app/main.py`) | REST endpoints under `/api/v1`, authentication and roles, validation, the consistent error envelope, request IDs and the audit log, OpenAPI docs. |
 | **worker** (`backend/app/workers/`) | Celery tasks: scheduled anomaly detection (every 6 h), budget evaluation (hourly), retry of failed notifications (every 10 min). |
 | **beat** | The Celery scheduler that enqueues those tasks into Redis. |
 | **PostgreSQL** | Billing records, imports, detections, incidents, budgets, notification history. |
@@ -80,17 +80,61 @@ On each evaluation (after imports, hourly via Celery, or through **Check budgets
 | Deterministic explanations, no LLM | Reproducible, private and testable, and they cannot invent causes. |
 | Advisory lock plus unique constraints | Concurrent detection runs cannot create duplicate incidents. |
 | Browser calls the API directly (CORS) | A simple local setup that works the same in Docker and in development. |
-| Ports bound to `127.0.0.1` | Nothing is exposed to the local network. There is no authentication yet. |
+| Ports bound to `127.0.0.1` | Nothing is exposed to the local network. Authentication protects the data, but there is no TLS. |
+| Opaque, hashed, revocable session tokens | Sign-out and password changes take effect immediately. JWTs could not be revoked without a deny-list. |
 
-## Error handling and logging
+## Authentication and authorization
 
-- Every error response uses one envelope: `{"error": {"code", "message", "details"}}`. This covers validation errors (422), domain errors (400/404/409/413/415) and unexpected errors (500, logged with a stack trace and no internal details in the response).
-- Logs go to stdout. Set `LOG_JSON=true` for one-JSON-object-per-line structured logs that carry context such as `import_id` and `run_id`.
+**Model: one workspace, three roles.** Every signed-in user sees the same billing data. The role decides what they may change:
 
-## Security posture (MVP)
+| Role | Can |
+| --- | --- |
+| viewer | Read everything: analytics, incidents and investigations, budgets, imports, settings values, delivery history |
+| member | Everything a viewer can, plus: upload or load billing data, run detection, acknowledge, note, resolve or reopen incidents, create, edit or delete budgets, check budgets |
+| admin | Everything a member can, plus: delete imports, change detection settings, manage notification channels (including test sends), allocation rules and users, read the audit log |
 
-- Local-only by design: all ports are bound to `127.0.0.1` and there is no authentication. Authentication and authorization are scheduled for Milestone 8.
-- Secrets live in `.env`, which is git-ignored. `.env.example` holds placeholders only.
+*Why not separate organizations?* For a local, single-team tool, multi-tenancy would add an `organization_id` to every table and query without protecting anything more. Roles cover the real need: who may change shared data. Multi-tenancy is a documented future extension.
+
+**Sign-in flow.**
+
+1. On an empty database, `GET /auth/status` returns `setup_required: true`. The login page then shows **Create the admin account**. `POST /auth/setup` is serialized with an advisory lock and only works while no user exists.
+2. `POST /auth/login` checks the password and issues a session token: 32 random bytes, URL-safe.
+3. The browser sends it as `Authorization: Bearer <token>`. The API stores only `SHA-256(token)` in `user_sessions`, together with its expiry (12 h by default), so a database leak exposes no usable tokens.
+4. Each request resolves the token to an active, unexpired, non-revoked session of an active user. If that fails the response is `401`, and the dashboard clears the token and redirects to `/login?next=…`. Only `/dashboard…` paths are accepted for `next`, so there is no open redirect.
+5. Sign-out revokes the session. Changing a password revokes all of the user's other sessions. An admin password reset or deactivation revokes all of that user's sessions.
+
+**Passwords.** Passwords are hashed with scrypt (n=2¹⁴, r=8, p=1) and a random salt. They must be 10–128 characters, with no leading or trailing spaces and not trivially repetitive. Login failures return the same message whether or not the e-mail exists. For unknown e-mails the server still verifies against a dummy hash, so response timing reveals nothing. After 5 failures the account is locked for 15 minutes (`429`, `Retry-After`).
+
+**Enforcement.** Every router except health, auth and the data-free CSV template is mounted with a `get_current_user` dependency. Endpoints that change data also declare `require_member` or `require_admin`. `tests/test_auth.py` holds an explicit access policy and calls **every route in the OpenAPI spec** as anonymous, viewer, member and admin. A new endpoint that forgets its guard fails the test suite.
+
+**Recovery.** `python -m scripts.manage_users create-admin | reset-password` works directly against the database. It reads the password from a prompt or `CLOUDPULSE_PASSWORD`, never from the command line, and the action is audited.
+
+**Token storage trade-off.** The dashboard keeps the token in `localStorage`, so it survives a reload. Scripts on the same origin could read it. The mitigations are that the app never renders HTML from data (React escapes everything), tokens expire and can be revoked, and everything is local-only. An HttpOnly cookie behind a same-origin reverse proxy would be the next hardening step for a networked deployment.
+
+## Audit log
+
+`audit_events` records who did what and when, with the client IP and the request ID:
+
+- **Sign-in:** `auth.setup`, `auth.login`, `auth.login_failed` (with the attempted e-mail), `auth.logout`, `auth.password_changed`
+- **Users:** `user.created`, `user.updated`, `user.password_reset`
+- **Imports and detection:** `import.uploaded`, `import.sample_loaded`, `import.deleted`, `detection.run`, `detection.settings_updated`
+- **Configuration:** `budget.*`, `channel.*`, `allocation_rule.*`
+
+Incident actions are recorded in each incident's own timeline (`incident_events`). Admins read the audit log under **Settings → Audit log** or at `GET /api/v1/audit-events`.
+
+## Error handling, logging and request IDs
+
+- Every error response uses one envelope: `{"error": {"code", "message", "details"}}`. This covers validation errors (422), authentication (401) and permission errors (403), domain errors (400/404/409/413/415/429), and unexpected errors.
+- **Request IDs.** Each request gets an ID: either a safe incoming `X-Request-ID` (64 characters max, `[A-Za-z0-9._-]`) or a new UUID. It is returned in the `X-Request-ID` response header, attached to every log line (`[request_id]` in text logs, a `request_id` field in JSON logs), and stored on audit events.
+- **Unexpected errors (500)** are logged with the full stack trace. The response contains only `internal_error` and the request ID (`details.request_id`), so a user can quote it and an operator can find the trace. No internal details leak.
+- **Access log.** One line per request with method, path, status, duration and user ID. Set `LOG_JSON=true` for one-JSON-object-per-line output.
+
+## Security summary
+
+- Authentication and role-based authorization on every non-public endpoint, enforced by tests.
+- Passwords hashed with scrypt, token hashes stored instead of tokens, sessions revocable, accounts locked after repeated failures.
+- Secrets live in `.env`, which is git-ignored. `.env.example` holds placeholders. CI fails if any `.env` file is ever committed.
 - Uploads: `.csv` only, size-limited before and after reading, never written to disk, and the filename is used only as a display label.
 - Webhook URLs are masked in API responses because they often embed tokens.
-- Containers run as non-root users.
+- Ports are bound to `127.0.0.1`. Containers run as non-root users.
+- Not yet: TLS, HttpOnly cookie sessions, rate limiting beyond login lockout, multi-tenancy (see the README's known limitations).

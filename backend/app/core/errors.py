@@ -25,12 +25,14 @@ class AppError(Exception):
         code: str = "bad_request",
         status_code: int = status.HTTP_400_BAD_REQUEST,
         details: Any = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.code = code
         self.status_code = status_code
         self.details = details
+        self.headers = headers
 
 
 class NotFoundError(AppError):
@@ -57,7 +59,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
-            status_code=exc.status_code, content=error_body(exc.code, exc.message, exc.details)
+            status_code=exc.status_code,
+            content=error_body(exc.code, exc.message, exc.details),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

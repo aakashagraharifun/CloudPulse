@@ -7,18 +7,23 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, Up
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin, require_member
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
-from app.models import BillingImport, ImportSource, ImportStatus
+from app.models import BillingImport, ImportSource, ImportStatus, User
 from app.schemas.common import Page
 from app.schemas.imports import CanonicalField, ImportDetail, ImportSchemaResponse, ImportSummary
+from app.services.audit import record_audit
 from app.services.ingestion import service
 from app.services.ingestion.sample_data import default_end_date, generate_sample_csv
 from app.services.normalization.schema import CANONICAL_FIELDS
 from app.services.pipeline import run_post_import_evaluation
 
 router = APIRouter(prefix="/imports", tags=["imports"])
+# The CSV template contains no billing data, so it is available without signing in
+# (it is downloaded with a plain link).
+public_router = APIRouter(prefix="/imports", tags=["imports"])
 
 # Multipart framing adds a little overhead on top of the file itself.
 _MULTIPART_OVERHEAD_BYTES = 64 * 1024
@@ -30,8 +35,26 @@ _IMPORT_FAILED_RESPONSES = {
 }
 
 
-def _finish(db: Session, billing_import: BillingImport) -> ImportDetail:
+def _finish(
+    db: Session, billing_import: BillingImport, user: User, request: Request, action: str
+) -> ImportDetail:
     detail = ImportDetail.model_validate(billing_import)
+    record_audit(
+        db,
+        action,
+        actor=user,
+        request=request,
+        target_type="import",
+        target_id=billing_import.id,
+        details={
+            "filename": billing_import.filename,
+            "status": billing_import.status,
+            "rows_inserted": billing_import.rows_inserted,
+            "rows_duplicate": billing_import.rows_duplicate,
+            "rows_invalid": billing_import.rows_invalid,
+        },
+    )
+    db.commit()
     if billing_import.status == ImportStatus.FAILED:
         raise AppError(
             billing_import.error_summary or "The file failed validation.",
@@ -62,7 +85,7 @@ def import_schema(settings: Settings = Depends(get_settings)) -> ImportSchemaRes
     )
 
 
-@router.get(
+@public_router.get(
     "/template.csv",
     summary="Download a CSV template",
     response_class=Response,
@@ -93,6 +116,7 @@ def upload_billing_file(
     is_sample: bool = Form(False, description="Mark the file as synthetic / sample data"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: User = Depends(require_member),
 ) -> ImportDetail:
     # Reject oversized requests early using the declared length, then re-check the
     # actual bytes read (the header can be absent or wrong).
@@ -110,7 +134,7 @@ def upload_billing_file(
         settings=settings,
         source=ImportSource.SAMPLE if is_sample else ImportSource.UPLOAD,
     )
-    return _finish(db, billing_import)
+    return _finish(db, billing_import, user, request, "import.uploaded")
 
 
 @router.post(
@@ -121,7 +145,10 @@ def upload_billing_file(
     responses={409: {"description": "Sample data is already loaded."}},
 )
 def load_sample_data(
-    db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(require_member),
 ) -> ImportDetail:
     existing = db.scalar(
         select(BillingImport).where(
@@ -144,7 +171,7 @@ def load_sample_data(
         settings=settings,
         source=ImportSource.SAMPLE,
     )
-    return _finish(db, billing_import)
+    return _finish(db, billing_import, user, request, "import.sample_loaded")
 
 
 @router.get("", response_model=Page[ImportSummary], summary="List imports (newest first)")
@@ -172,6 +199,23 @@ def get_import(import_id: int, db: Session = Depends(get_db)) -> ImportDetail:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an import and all of its billing records",
 )
-def delete_import(import_id: int, db: Session = Depends(get_db)) -> Response:
+def delete_import(
+    import_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> Response:
+    billing_import = service.get_import(db, import_id)
+    details = {"filename": billing_import.filename, "rows_inserted": billing_import.rows_inserted}
     service.delete_import(db, import_id)
+    record_audit(
+        db,
+        "import.deleted",
+        actor=user,
+        request=request,
+        target_type="import",
+        target_id=import_id,
+        details=details,
+    )
+    db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

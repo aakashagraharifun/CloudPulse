@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState, type DragEvent, type FormEvent } from "react";
 
 import { LoadSampleButton } from "@/components/features/load-sample-button";
+import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
 import {
   Badge,
@@ -46,6 +47,7 @@ function isImportDetail(value: unknown): value is ImportDetail {
 
 export default function ImportsPage() {
   const { refresh } = useDataStatus();
+  const { can } = useAuth();
   const [offset, setOffset] = useState(0);
   const imports = useApi<Page<ImportSummary>>(`/imports${qs({ limit: LIMIT, offset })}`);
   const schema = useApi<ImportSchema>("/imports/schema");
@@ -136,6 +138,12 @@ export default function ImportsPage() {
         }
       />
 
+      {!can("member") && (
+        <div className="mb-4">
+          <Notice tone="info">You have view-only access. Members and admins can import billing data.</Notice>
+        </div>
+      )}
+      {can("member") && (
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2" title="Upload a billing CSV">
           <form onSubmit={upload} className="space-y-4">
@@ -201,6 +209,7 @@ export default function ImportsPage() {
           <LoadSampleButton variant="secondary" onLoaded={afterImport} />
         </Card>
       </div>
+      )}
 
       <Card className="mt-4" title="Import history" bodyClassName="p-0">
         {imports.error ? (
@@ -257,7 +266,7 @@ export default function ImportsPage() {
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatDateTime(item.created_at)}</td>
                     <td className="px-5 py-3 text-right">
-                      {item.status !== "processing" && (
+                      {can("admin") && item.status !== "processing" && (
                         <Button variant="danger" size="sm" onClick={() => remove(item)}>
                           Delete
                         </Button>
