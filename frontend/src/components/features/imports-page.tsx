@@ -203,8 +203,9 @@ export function ImportsPage() {
 
         <Card title="No data handy?" description="A deterministic 90-day synthetic dataset">
           <p className="mb-4 text-sm text-slate-600">
-            Multi-service AWS and GCP costs in USD with two injected anomalies: a NAT gateway data-transfer spike and a
-            new GPU instance. It is labelled as sample data everywhere it appears.
+            Cloud (AWS, Google Cloud, Azure), AI model API (OpenAI, Anthropic, Gemini) and SaaS costs in USD with three
+            injected anomalies: a NAT gateway data-transfer spike, a new GPU instance and an LLM token spike. It is
+            labelled as sample data everywhere it appears.
           </p>
           <LoadSampleButton variant="secondary" onLoaded={afterImport} />
         </Card>

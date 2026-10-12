@@ -223,3 +223,41 @@ def test_allocation_rule_api_reattributes_records(client: TestClient, db: Sessio
     assert invalid.status_code == 422
     deleted = client.delete(f"/api/v1/allocation-rules/{rule_id}")
     assert deleted.json() == {"rule": None, "records_updated": 1}
+
+
+def test_category_and_model_dimensions(client: TestClient, db: Session) -> None:
+    imp = make_import(db)
+    day = date(2026, 9, 2)
+    add_cost(db, imp, day, "60", provider="aws", service="EC2")
+    add_cost(db, imp, day, "10", provider="azure", service="Virtual Machines")
+    add_cost(db, imp, day, "20", provider="openai", service="OpenAI API", model="gpt-4o")
+    add_cost(db, imp, day, "8", provider="anthropic", service="Claude", model="claude-sonnet-4-5")
+    add_cost(db, imp, day, "2", provider="acme-cdn", service="CDN")
+    db.commit()
+
+    categories = analytics.get_breakdown(
+        db, "USD", Dimension.CATEGORY, day, day, NO_FILTERS, limit=10
+    )
+    assert [(i.key, i.label, i.cost) for i in categories.items] == [
+        ("cloud", "Cloud infrastructure", Decimal("70")),
+        ("ai", "AI & LLM APIs", Decimal("28")),
+        ("other", "Other", Decimal("2")),
+    ]
+    models = analytics.get_breakdown(
+        db, "USD", Dimension.MODEL, day, day, CostFilters(category="ai"), limit=10
+    )
+    assert {i.key: i.cost for i in models.items} == {
+        "gpt-4o": Decimal("20"),
+        "claude-sonnet-4-5": Decimal("8"),
+    }
+
+    params = {"start": "2026-09-02", "end": "2026-09-02"}
+    ai_only = client.get("/api/v1/costs/summary", params={**params, "category": "ai"}).json()
+    assert ai_only["current"]["total_cost"] == "28.0000"
+    one_model = client.get(
+        "/api/v1/costs/breakdown",
+        params={**params, "dimension": "provider", "model": "gpt-4o"},
+    ).json()
+    assert [i["key"] for i in one_model["items"]] == ["openai"]
+    bad = client.get("/api/v1/costs/summary", params={**params, "category": "llm"})
+    assert bad.status_code == 422

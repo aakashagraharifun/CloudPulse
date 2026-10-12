@@ -15,6 +15,7 @@ class MatchField(StrEnum):
     RESOURCE_ID = "resource_id"
     REGION = "region"
     USAGE_TYPE = "usage_type"
+    MODEL = "model"
 
 
 class MatchOperator(StrEnum):
@@ -34,7 +35,7 @@ class AllocationRule(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "match_field IN ('provider', 'account_id', 'service', 'resource_id', 'region', "
-            "'usage_type')",
+            "'usage_type', 'model')",
             name="match_field_valid",
         ),
         CheckConstraint(

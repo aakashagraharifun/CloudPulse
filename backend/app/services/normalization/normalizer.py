@@ -21,6 +21,7 @@ from typing import Any
 import pandas as pd
 
 from app.services.normalization.schema import CANONICAL_FIELDS, FIELDS_BY_NAME, normalize_header
+from app.services.providers import normalize_provider
 
 EIGHT_PLACES = Decimal("0.00000001")
 MAX_ABS_COST = Decimal("1000000000")  # 1e9 per line item
@@ -70,6 +71,7 @@ class NormalizedRecord:
     source_row_number: int
     extra_attributes: dict[str, str] | None
     fingerprint: str = ""
+    model: str | None = None
 
 
 @dataclass
@@ -183,6 +185,10 @@ def _fingerprint(record: NormalizedRecord, occurrence: int) -> str:
         record.environment_tag or "",
         str(occurrence),
     ]
+    # Only present for model usage, so fingerprints of records without a model are
+    # identical to those computed before the field existed (duplicates still match).
+    if record.model:
+        parts.append(f"model={record.model}")
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -285,7 +291,7 @@ def normalize_csv(
     for name in mapping:
         frame[name] = frame[name].str.strip()
     if "provider" in frame:
-        frame["provider"] = frame["provider"].str.lower()
+        frame["provider"] = frame["provider"].map(normalize_provider)
     else:
         frame["provider"] = "aws"  # only reachable for AWS CUR files
 
@@ -352,6 +358,7 @@ def normalize_csv(
         region = _optional_text(values, "region", row_errors)
         usage_type = _optional_text(values, "usage_type", row_errors)
         usage_unit = _optional_text(values, "usage_unit", row_errors)
+        model = _optional_text(values, "model", row_errors)
         project = _optional_text(values, "project", row_errors)
         environment = _optional_text(values, "environment", row_errors)
 
@@ -382,6 +389,7 @@ def normalize_csv(
             cost=cost,
             project_tag=project,
             environment_tag=environment,
+            model=model,
             source_row_number=line,
             extra_attributes=dict(list(extra.items())[:MAX_EXTRA_ATTRIBUTES]) or None,
         )

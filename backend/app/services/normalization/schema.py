@@ -40,7 +40,8 @@ CANONICAL_FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec(
         "provider",
         True,
-        "Cloud provider identifier (lower-case letters, digits, '-' or '_'). "
+        "Provider identifier (lower-case letters, digits, '-' or '_'), e.g. aws, gcp, azure, "
+        "openai, anthropic. Common names such as 'Microsoft Azure' are converted automatically. "
         "Optional for AWS Cost and Usage Report files, which default to 'aws'.",
         "aws",
         ("provider", "cloud_provider", "cloud"),
@@ -100,6 +101,15 @@ CANONICAL_FIELDS: tuple[FieldSpec, ...] = (
         "BoxUsage:m6i.xlarge",
         ("usage_type", "lineitem_usagetype", "line_item_usage_type", "sku"),
         255,
+    ),
+    FieldSpec(
+        "model",
+        False,
+        "AI/LLM model for model-usage line items (OpenAI, Anthropic, Gemini, ...). "
+        "Usage is typically tokens, e.g. usage_type 'output tokens' with usage_unit 'tokens'.",
+        "gpt-4o",
+        ("model", "model_name", "model_id", "llm_model", "ai_model"),
+        128,
     ),
     FieldSpec(
         "usage_quantity",

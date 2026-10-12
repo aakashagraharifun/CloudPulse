@@ -7,6 +7,7 @@ PostgreSQL 16, managed with Alembic migrations in `backend/alembic/versions/`:
 | `0001` | `billing_imports`, `billing_records`, `allocation_rules` |
 | `0002` | `detection_settings`, `detection_runs`, `anomaly_detections`, `incidents`, `incident_events`, `budgets`, `budget_alerts`, `notification_channels`, `notification_deliveries` |
 | `0003` | `users`, `user_sessions`, `audit_events` |
+| `0004` | `billing_records.model` (+ index); allocation rules may match on `model` |
 
 Conventions:
 - Money is `NUMERIC(18,8)` and quantities are `NUMERIC(24,8)`. Floating point is never used for money.
@@ -62,7 +63,8 @@ The canonical billing model: one normalized line item per row.
 | `import_id` | FK → `billing_imports.id`, cascade delete |
 | `usage_date` | UTC day the cost was incurred |
 | `provider`, `account_id`, `service`, `resource_id`, `region`, `usage_type` | Dimensions (`service` and `provider` required) |
-| `usage_quantity`, `usage_unit` | Optional usage. Enables usage-versus-price analysis |
+| `model` | AI/LLM model for model-usage line items (e.g. `gpt-4o`), otherwise null. Indexed. Included in the fingerprint only when present, so fingerprints of records without a model are unchanged |
+| `usage_quantity`, `usage_unit` | Optional usage (for AI usage: tokens). Enables usage-versus-price analysis |
 | `currency` | ISO 4217 code; `CHECK (currency ~ '^[A-Z]{3}$')` |
 | `cost` | `NUMERIC(18,8)`. Negative values (credits) are allowed |
 | `project_tag`, `environment_tag` | Tags exactly as they appeared in the source file |
@@ -79,7 +81,7 @@ Rules are evaluated by ascending `priority`, then `id`. They are case-insensitiv
 
 | Column | Notes |
 | --- | --- |
-| `match_field` | `provider`, `account_id`, `service`, `resource_id`, `region` or `usage_type` |
+| `match_field` | `provider`, `account_id`, `service`, `resource_id`, `region`, `usage_type` or `model` |
 | `match_operator` | `equals`, `prefix` or `contains` |
 | `match_value` | |
 | `project`, `environment` | At least one must be set (`CHECK`) |
@@ -158,3 +160,7 @@ Every attempt to notify a channel: `channel_id` (`SET NULL` on channel delete, s
 `actor_user_id` (FK, `SET NULL`), `actor_email` (a snapshot, also used for failed logins with no user), `action` (indexed, e.g. `import.deleted`), `target_type`, `target_id`, `details` (JSONB), `ip_address`, `request_id`, `created_at` (indexed).
 
 The data model is a **single workspace**: billing data is not partitioned per user or organization (see architecture.md, "Authentication and authorization").
+
+## Provider categories
+
+`category` is not stored. It is computed from `provider` in SQL (`app/services/providers.py`): known cloud providers map to `cloud`, model APIs (OpenAI, Anthropic, Google Gemini API, Mistral, DeepSeek, Hugging Face) to `ai`, SaaS and data platforms (Datadog, Snowflake, Databricks, MongoDB Atlas) to `saas`, and anything else to `other`. Changing the mapping therefore re-categorizes existing data without a migration.

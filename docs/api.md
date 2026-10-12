@@ -107,7 +107,9 @@ Uploading a file identical to a completed import returns `409`: `"This file was 
 
 ## Costs
 
-Common query parameters: `currency`, `start`, `end` (inclusive; defaults to the 30 days ending on the latest day with data), plus exact-match filters `provider`, `account_id`, `service`, `region`, `resource_id`, `usage_type`, `project` and `environment`. Pass the value `(unassigned)` to select records where a dimension is missing.
+Common query parameters: `currency`, `start`, `end` (inclusive; defaults to the 30 days ending on the latest day with data), plus exact-match filters `provider`, `account_id`, `service`, `region`, `resource_id`, `usage_type`, `model`, `project` and `environment`, and `category` (`cloud`, `ai`, `saas` or `other`, derived from the provider). Pass the value `(unassigned)` to select records where a dimension is missing.
+
+`dimension` (breakdowns, detection scopes and budget scopes) is one of `provider`, `category`, `account_id`, `service`, `region`, `resource_id`, `usage_type`, `model`, `project` or `environment`. For `category`, `label` is the display name (for example `AI & LLM APIs`).
 
 | Method | Path | Description |
 | --- | --- | --- |

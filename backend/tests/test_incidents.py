@@ -18,8 +18,10 @@ from tests.factories import add_daily_series, make_import
 END = date(2026, 10, 11)
 GPU_DAYS = (END - timedelta(days=4), END - timedelta(days=3))
 NAT_DAY = END - timedelta(days=11)
+LLM_DAY = END - timedelta(days=6)
 EC2 = "Amazon Elastic Compute Cloud"
 VPC = "Amazon Virtual Private Cloud"
+CLAUDE = "Claude API"
 
 
 @pytest.fixture()
@@ -60,8 +62,10 @@ def test_sample_data_produces_exactly_the_injected_incidents(
         ("service", VPC, NAT_DAY, NAT_DAY),
         ("total", "", *GPU_DAYS),
         ("service", EC2, *GPU_DAYS),
+        # The token spike is too small to move total spend past the thresholds.
+        ("service", CLAUDE, LLM_DAY, LLM_DAY),
     }
-    assert len(outcome.new_incident_ids) == 4
+    assert len(outcome.new_incident_ids) == 5
 
     gpu = _incident(db, "service", EC2)
     assert gpu.detection_count == 2  # two consecutive days grouped into one incident
@@ -192,15 +196,39 @@ def test_investigation_of_nat_spike_is_usage_driven(db: Session, sample_loaded: 
     assert not any("not available" in text for text in result.explanations)
 
 
+def test_investigation_of_llm_token_spike_names_the_model(db: Session, sample_loaded: None) -> None:
+    run_detection(db)
+    incident = _incident(db, "service", CLAUDE)
+    assert incident.severity == "low"  # large percentage, small amount
+    result = investigate(db, incident)
+    assert result.confidence == "high"
+    models = next(d for d in result.dimensions if d.dimension == "model")
+    top = models.contributors[0]
+    assert top.key == "claude-sonnet-4-5" and top.share_of_increase_pct == 100.0
+    usage_types = next(d for d in result.dimensions if d.dimension == "usage_type")
+    tokens = usage_types.contributors[0]
+    assert tokens.key == "output_tokens"
+    assert tokens.usage is not None and tokens.usage.driver == "usage"
+    assert tokens.usage.unit == "tokens"
+    assert any("usage-driven" in text for text in result.explanations)
+    assert "Review requests to claude-sonnet-4-5" in [s.title for s in result.suggestions]
+
+
+def test_model_dimension_is_omitted_without_model_usage(db: Session, sample_loaded: None) -> None:
+    run_detection(db)
+    result = investigate(db, _incident(db, "service", EC2))
+    assert "model" not in [d.dimension for d in result.dimensions]
+
+
 def test_incident_api_workflow(client: TestClient, db: Session, sample_loaded: None) -> None:
     run = client.post("/api/v1/anomalies/runs").json()
-    assert run["status"] == "completed" and run["incidents_created"] == 4
+    assert run["status"] == "completed" and run["incidents_created"] == 5
 
     listing = client.get("/api/v1/incidents?status=open").json()
-    assert listing["total"] == 4
+    assert listing["total"] == 5
     incident_id = listing["items"][0]["id"]
     assert client.get("/api/v1/incidents/counts").json() == {
-        "open": 4,
+        "open": 5,
         "acknowledged": 0,
         "resolved": 0,
     }

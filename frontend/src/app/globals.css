@@ -35,6 +35,17 @@
   /* Entrance animations (`animate-appear`, `animate-appear-zoom`). */
   --animate-appear: appear 0.5s ease-out forwards;
   --animate-appear-zoom: appear-zoom 0.5s ease-out forwards;
+  /* Provider logo strip: the track holds the list twice and moves right by one copy. */
+  --animate-marquee-right: marquee-right 60s linear infinite;
+
+  @keyframes marquee-right {
+    from {
+      transform: translateX(-50%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
 
   @keyframes appear {
     0% {
@@ -176,6 +187,10 @@ body {
 /* Fades a section's bottom edge into whatever follows it. */
 @utility fade-bottom {
   mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+}
+
+@utility fade-x {
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
 }
 
 /* Respect reduced motion: show animated content immediately instead of animating in. */

@@ -287,7 +287,7 @@ function Contributors({ investigation }: { investigation: Investigation }) {
                   contributor={c}
                   currency={currency}
                   showUsage={showUsage}
-                  mono={["resource_id", "usage_type", "account_id"].includes(dim.dimension)}
+                  mono={["resource_id", "usage_type", "account_id", "model"].includes(dim.dimension)}
                 />
               ))}
               {toNumber(dim.other_change) !== 0 && (

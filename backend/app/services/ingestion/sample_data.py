@@ -2,14 +2,20 @@
 
 THIS IS SYNTHETIC DATA. It is generated, not exported from a real cloud account.
 
-The dataset covers `days` days ending on `end_date` and contains two
-deliberately injected anomalies so the detection and investigation features
-can be demonstrated:
+The dataset covers `days` days ending on `end_date`. It mixes cloud
+infrastructure (AWS, Google Cloud, Microsoft Azure), AI model APIs (OpenAI,
+Anthropic, Google Gemini; billed per token, with a `model`) and a SaaS tool
+(Datadog), and contains three deliberately injected anomalies so the detection
+and investigation features can be demonstrated:
 
 1. GPU spike (end_date - 4 and end_date - 3): a new p4d.24xlarge EC2 instance
    appears in us-west-2 for the `ml-experiments` project.
 2. Data-transfer spike (end_date - 11): NAT Gateway processed bytes jump ~8x on
    untagged networking resources (usage-driven increase, no project tag).
+3. LLM token spike (end_date - 6): Claude output tokens for the
+   `support-assistant` project jump 10x (usage-driven increase on one model).
+
+Unit prices are illustrative list prices, not quotes.
 """
 
 import csv
@@ -27,6 +33,7 @@ SAMPLE_COLUMNS = (
     "resource_id",
     "region",
     "usage_type",
+    "model",
     "usage_quantity",
     "usage_unit",
     "currency",
@@ -38,6 +45,11 @@ SAMPLE_COLUMNS = (
 PROD_ACCOUNT = "111122223333"
 DEV_ACCOUNT = "444455556666"
 GCP_PROJECT = "cloudpulse-analytics-prod"
+AZURE_SUBSCRIPTION = "8f2c4e1a-5b7d-4c3e-9a6f-2d1b0e7c9a35"
+OPENAI_ORG = "org-cloudpulse-demo"
+ANTHROPIC_ORG = "cloudpulse-demo"
+GEMINI_PROJECT = "cloudpulse-ai-prod"
+DATADOG_ORG = "cloudpulse-demo"
 
 
 @dataclass(frozen=True)
@@ -55,6 +67,7 @@ class SampleLine:
     environment: str
     weekend_factor: float = 1.0  # multiplier applied on Saturday/Sunday
     noise: float = 0.04  # +/- relative jitter
+    model: str = ""
 
 
 def _d(value: str) -> Decimal:
@@ -118,6 +131,61 @@ LINES: tuple[SampleLine, ...] = (
 )
 # fmt: on
 
+PER_MTOK = Decimal("0.000001")
+
+
+def _per_mtok(price: str) -> Decimal:
+    """Unit price per token from a price per million tokens."""
+    return Decimal(price) * PER_MTOK
+
+
+SONNET = "claude-sonnet-4-5"
+# Multi-cloud, AI model API and SaaS lines. They draw jitter from their own random
+# generator, so adding them left every value of the lines above unchanged.
+# fmt: off
+EXTRA_LINES: tuple[SampleLine, ...] = (
+    # Microsoft Azure: reporting workloads
+    SampleLine("azure", AZURE_SUBSCRIPTION, "Virtual Machines", "vm-reporting-01", "eastus",
+               "D4s v5", "Hrs", _d("0.192"), _d("24"), "analytics", "production", noise=0.0),
+    SampleLine("azure", AZURE_SUBSCRIPTION, "Storage", "streportingexports", "eastus",
+               "Hot LRS Data Stored", "GB-Mo", _d("0.0184"), _d("210"),
+               "analytics", "production", noise=0.01),
+    # OpenAI: search assistant chat model and document embeddings
+    SampleLine("openai", OPENAI_ORG, "OpenAI API", "proj_search_assistant", "global",
+               "input_tokens", "tokens", _per_mtok("2.50"), _d("1600000"),
+               "search", "production", weekend_factor=0.55, noise=0.08, model="gpt-4o"),
+    SampleLine("openai", OPENAI_ORG, "OpenAI API", "proj_search_assistant", "global",
+               "output_tokens", "tokens", _per_mtok("10.00"), _d("220000"),
+               "search", "production", weekend_factor=0.55, noise=0.08, model="gpt-4o"),
+    SampleLine("openai", OPENAI_ORG, "OpenAI API", "proj_doc_indexing", "global",
+               "input_tokens", "tokens", _per_mtok("0.02"), _d("40000000"),
+               "analytics", "production", weekend_factor=0.3, noise=0.12,
+               model="text-embedding-3-small"),
+    # Anthropic: customer-support assistant
+    SampleLine("anthropic", ANTHROPIC_ORG, "Claude API", "wrkspc_support_assistant", "global",
+               "input_tokens", "tokens", _per_mtok("3.00"), _d("1200000"),
+               "support-assistant", "production", weekend_factor=0.6, noise=0.07, model=SONNET),
+    SampleLine("anthropic", ANTHROPIC_ORG, "Claude API", "wrkspc_support_assistant", "global",
+               "output_tokens", "tokens", _per_mtok("15.00"), _d("180000"),
+               "support-assistant", "production", weekend_factor=0.6, noise=0.07, model=SONNET),
+    # Google Gemini API: ticket classification
+    SampleLine("google-ai", GEMINI_PROJECT, "Gemini API", "ticket-classifier", "global",
+               "input_tokens", "tokens", _per_mtok("0.30"), _d("3000000"),
+               "support-assistant", "production", weekend_factor=0.6, noise=0.08,
+               model="gemini-2.5-flash"),
+    SampleLine("google-ai", GEMINI_PROJECT, "Gemini API", "ticket-classifier", "global",
+               "output_tokens", "tokens", _per_mtok("2.50"), _d("400000"),
+               "support-assistant", "production", weekend_factor=0.6, noise=0.08,
+               model="gemini-2.5-flash"),
+    # Datadog: shared monitoring, intentionally untagged
+    SampleLine("datadog", DATADOG_ORG, "Infrastructure Monitoring", "", "global",
+               "infra_hosts", "Host-days", _d("0.5"), _d("8"), "", "", noise=0.0),
+)
+# fmt: on
+
+LLM_SPIKE_DAYS_BEFORE_END = 6
+LLM_SPIKE_FACTOR = 10.0  # Claude output tokens on the spike day
+
 GPU_SPIKE = SampleLine(
     "aws", DEV_ACCOUNT, EC2, "i-0f3e9a7c5b1d2468a", "us-west-2",
     "BoxUsage:p4d.24xlarge", "Hrs", _d("32.7726"), _d("24"),
@@ -142,6 +210,7 @@ def generate_sample_rows(
 ) -> list[dict[str, str]]:
     end_date = end_date or default_end_date()
     rng = random.Random(seed)
+    extra_rng = random.Random(seed + 1)
     rows: list[dict[str, str]] = []
 
     def emit(day: date, line: SampleLine, quantity: Decimal) -> None:
@@ -155,6 +224,7 @@ def generate_sample_rows(
                 "resource_id": line.resource_id,
                 "region": line.region,
                 "usage_type": line.usage_type,
+                "model": line.model,
                 "usage_quantity": format(quantity, "f"),
                 "usage_unit": line.usage_unit,
                 "currency": "USD",
@@ -177,6 +247,20 @@ def generate_sample_rows(
                 factor *= line.weekend_factor
             if line.usage_type == "NatGateway-Bytes" and offset == NAT_SPIKE_DAYS_BEFORE_END:
                 factor *= NAT_SPIKE_FACTOR
+            emit(day, line, line.daily_quantity * Decimal(str(round(factor, 6))))
+        for line in EXTRA_LINES:
+            factor = 1.0
+            if line.noise:
+                factor *= (1 + DAILY_GROWTH) ** day_index
+                factor *= 1 + extra_rng.uniform(-line.noise, line.noise)
+            if weekend:
+                factor *= line.weekend_factor
+            if (
+                line.model == SONNET
+                and line.usage_type == "output_tokens"
+                and offset == LLM_SPIKE_DAYS_BEFORE_END
+            ):
+                factor *= LLM_SPIKE_FACTOR
             emit(day, line, line.daily_quantity * Decimal(str(round(factor, 6))))
         if offset in GPU_SPIKE_HOURS:
             emit(day, GPU_SPIKE, GPU_SPIKE_HOURS[offset])

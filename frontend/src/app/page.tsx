@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ArrowDownIcon, LayoutDashboardIcon } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
+import { ProviderMarquee } from "@/components/brand/provider-marquee";
 import { HeroSection } from "@/components/ui/hero-section";
 import { buttonClass, cx } from "@/components/ui/primitives";
 
@@ -20,6 +21,7 @@ export default function LandingPage() {
       <SiteHeader />
       <main>
         <Hero />
+        <ProviderMarquee />
         <Pillars />
         <Workflow />
         <Features />
@@ -72,12 +74,8 @@ function Hero() {
     // `.dark` scopes the shadcn tokens to the navy "ink" palette, continuing the header.
     <div className="dark">
       <HeroSection
-        badge={{
-          text: "Runs locally",
-          action: { text: "Try the sample data", href: "/dashboard/imports" },
-        }}
         title="Know why your cloud bill changed"
-        description="CloudPulse turns billing exports into cost analytics, flags unusual spend with explainable statistics, and shows the evidence behind every increase."
+        description="CloudPulse turns cloud, AI and SaaS billing exports into cost analytics, flags unusual spend with explainable statistics, and shows the evidence behind every increase."
         actions={[
           {
             text: "Open the dashboard",
@@ -106,7 +104,7 @@ function Hero() {
 const PILLARS = [
   {
     title: "Allocate",
-    body: "Normalize billing exports into one canonical model and break spend down by provider, service, resource, region, project and environment. Allocation rules attribute untagged costs.",
+    body: "Normalize cloud, AI model API and SaaS billing exports into one canonical model and break spend down by provider, service, model, resource, region, project and environment. Allocation rules attribute untagged costs.",
     icon: "M4 6h16M4 12h10M4 18h6",
   },
   {
@@ -138,7 +136,7 @@ function Pillars() {
         <SectionHeading
           eyebrow="Platform"
           title="From cost visibility to cost accountability"
-          body="CloudPulse focuses on one thing: helping small engineering teams understand where cloud money goes and why it changed."
+          body="CloudPulse focuses on one thing: helping small engineering teams understand where cloud and AI money goes and why it changed."
         />
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {PILLARS.map((pillar) => (
@@ -161,7 +159,7 @@ function Pillars() {
 const STEPS = [
   {
     title: "Import billing data",
-    body: "Upload a CSV in the CloudPulse format or an AWS Cost and Usage Report export. Every row is validated with line-level errors, and re-imported records are de-duplicated.",
+    body: "Upload a CSV from any provider (AWS, Google Cloud, Azure, OpenAI, Anthropic and more) in the CloudPulse format, or an AWS Cost and Usage Report. Every row is validated with line-level errors, and re-imported records are de-duplicated.",
   },
   {
     title: "Detect unusual spend",
@@ -228,6 +226,45 @@ const FEATURES: { title: string; body: string; points: string[]; visual: ReactNo
     ),
   },
   {
+    title: "AI and LLM spend, next to your cloud bill",
+    body: "Token-billed model APIs are imported like any other cost line, with the model they were spent on. See which models, teams and token types drive AI spend, and catch runaway usage the day it happens.",
+    points: [
+      "Spend by category: cloud infrastructure, AI model APIs and SaaS",
+      "Group and filter by model, such as gpt-4o or claude-sonnet-4-5",
+      "Token spikes investigated like any incident: usage-driven or price-driven",
+      "Suggestions to check prompt sizes, output limits, retries and caching",
+    ],
+    visual: (
+      <div>
+        <p className="text-sm font-medium">AI model spend · last 30 days</p>
+        <ul className="mt-3 space-y-3">
+          {[
+            ["claude-sonnet-4-5", "$215.60", "45.0%", "w-[45%]"],
+            ["gpt-4o", "$185.19", "38.6%", "w-[38.6%]"],
+            ["gemini-2.5-flash", "$57.04", "11.9%", "w-[11.9%]"],
+            ["text-embedding-3-small", "$21.53", "4.5%", "w-[4.5%]"],
+          ].map(([model, cost, share, width]) => (
+            <li key={model}>
+              <div className="flex flex-wrap justify-between gap-x-3 text-sm">
+                <span className="font-mono text-[0.8rem]">{model}</span>
+                <span className="font-medium">
+                  {cost} <span className="font-normal text-slate-500">· {share}</span>
+                </span>
+              </div>
+              <div className="mt-1.5 h-2 rounded-full bg-slate-100">
+                <div className={cx("h-full rounded-full bg-brand-600", width)} />
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+          <span className="font-medium">Oct 5 · Claude API:</span> output tokens rose 11.4× while cost rose 11.4×, so the
+          increase is usage-driven.
+        </p>
+      </div>
+    ),
+  },
+  {
     title: "Explainable anomaly detection",
     body: "No black box. Each detection stores the observed cost, expected baseline, thresholds, robust z-score and the baseline values it used.",
     points: [
@@ -264,15 +301,15 @@ const FEATURES: { title: string; body: string; points: string[]; visual: ReactNo
     visual: (
       <div>
         <div className="flex justify-between text-sm">
-          <span className="font-medium">Monthly cloud budget · $3,000</span>
+          <span className="font-medium">Monthly cloud and AI budget · $3,000</span>
           <span className="text-red-700">Over budget</span>
         </div>
         <div className="mt-1.5 h-2 rounded-full bg-red-100">
           <div className="h-full w-full rounded-full bg-critical" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">$3,008.37 spent by Oct 11 · 100.3% · thresholds 50%, 80%, 100% crossed</p>
+        <p className="mt-2 text-sm text-slate-600">$3,346.79 spent by Oct 11 · 111.6% · thresholds 50%, 80%, 100% crossed</p>
         <p className="mt-3 rounded-lg bg-slate-50 p-3 font-mono text-[0.75rem] text-slate-700">
-          [CloudPulse] Budget &apos;Monthly cloud budget&apos; reached 100.28% (threshold 100%)
+          [CloudPulse] Budget &apos;Monthly cloud and AI budget&apos; reached 111.56% (threshold 100%)
         </p>
       </div>
     ),
@@ -304,7 +341,7 @@ function Features() {
               <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-6 shadow-sm">
                 <div className="rounded-xl bg-white p-5 ring-1 ring-slate-200">{feature.visual}</div>
                 <p className="mt-3 text-center text-xs text-slate-500">
-                  Values from the built-in sample dataset{i === 2 ? " with an example $3,000 monthly budget" : ""}
+                  Values from the built-in sample dataset{i === FEATURES.length - 1 ? " with an example $3,000 monthly budget" : ""}
                 </p>
               </div>
             </div>
@@ -349,6 +386,14 @@ const FAQS = [
     "No. CloudPulse runs locally with Docker Compose and works from CSV billing exports. A synthetic dataset is built in, so you can explore every feature without any cloud account.",
   ],
   [
+    "Which providers can I import?",
+    "Any provider that can export costs as CSV: AWS, Google Cloud, Microsoft Azure, Oracle Cloud, OpenAI, Anthropic, Google Gemini, Mistral, Datadog, Snowflake and more. Known provider names such as \"Microsoft Azure\" are normalized automatically and grouped into cloud, AI and SaaS categories; any other provider is kept as-is.",
+  ],
+  [
+    "Can CloudPulse track LLM and AI API costs?",
+    "Yes. Add a model column (for example gpt-4o or claude-sonnet-4-5) and token counts as the usage quantity. Spend can then be grouped by model, budgets and anomaly detection can be scoped to a model or to AI spend as a whole, and investigations separate usage-driven token growth from price changes. CloudPulse reads exported files; it does not call provider APIs.",
+  ],
+  [
     "Which billing formats are supported?",
     "The CloudPulse canonical CSV format, plus AWS Cost and Usage Report column names (for example lineItem/UnblendedCost). Header names are matched case-insensitively, and a downloadable template documents every field.",
   ],
@@ -358,7 +403,7 @@ const FAQS = [
   ],
   [
     "Does CloudPulse use AI to explain incidents?",
-    "No. Explanations are deterministic and computed from your billing records, so the same data always produces the same explanation. Nothing is sent to an external service.",
+    "No. CloudPulse tracks what you spend on AI, but its explanations are deterministic and computed from your billing records, so the same data always produces the same explanation. Nothing is sent to an external service.",
   ],
   [
     "What happens if I import the same file twice?",
@@ -400,7 +445,7 @@ function ClosingCta() {
         <div className="rounded-3xl bg-gradient-to-br from-brand-700 to-ink px-6 py-14 text-center text-white sm:px-12">
           <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">See CloudPulse on real-looking data</h2>
           <p className="mx-auto mt-4 max-w-xl text-lg text-blue-100">
-            Load the sample dataset in one click, find the two injected anomalies and follow the evidence.
+            Load the sample dataset of cloud, AI and SaaS spend in one click, find the three injected anomalies and follow the evidence.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link href="/dashboard" className="inline-flex h-11 items-center rounded-lg bg-white px-5 font-medium text-ink hover:bg-blue-50">
@@ -422,7 +467,7 @@ function SiteFooter() {
       <Container className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Logo />
-          <p className="mt-2 text-sm text-slate-500">Open, local-first cloud cost intelligence. A student engineering project.</p>
+          <p className="mt-2 text-sm text-slate-500">Open, local-first cost intelligence for cloud and AI spend. A student engineering project.</p>
         </div>
         <nav aria-label="Footer">
           <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">

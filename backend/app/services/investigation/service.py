@@ -29,6 +29,7 @@ from app.services.analytics.service import (
     coverage_days,
     daily_costs,
     days_between,
+    dimension_column,
     latest_data_date,
 )
 from app.services.anomaly_detection.service import (
@@ -38,6 +39,7 @@ from app.services.anomaly_detection.service import (
     scope_filters,
     scope_label,
 )
+from app.services.providers import value_label
 
 ZERO = Decimal("0")
 TOP_N = 5
@@ -47,12 +49,28 @@ DOMINANT_SHARE = 50.0
 MIN_SHARE_TO_NARRATE = 10.0
 CHART_PADDING_AFTER = 7
 DATA_TRANSFER_HINTS = ("datatransfer", "data-transfer", "bytes", "natgateway", "egress")
+TOKEN_HINTS = ("token",)
 
+# The first dimension whose top contributor is known leads the narrative.
 DIMENSIONS_FOR_SCOPE = {
-    TOTAL_SCOPE: ("service", "resource_id", "region", "usage_type", "project", "account_id"),
-    "service": ("resource_id", "region", "usage_type", "project"),
+    TOTAL_SCOPE: (
+        "service",
+        "resource_id",
+        "model",
+        "region",
+        "usage_type",
+        "project",
+        "account_id",
+    ),
+    "service": ("resource_id", "model", "region", "usage_type", "project"),
+    "provider": ("service", "model", "resource_id", "region", "usage_type", "project"),
+    "category": ("provider", "service", "model", "resource_id", "usage_type", "project"),
+    "model": ("usage_type", "resource_id", "project", "account_id"),
 }
-DEFAULT_DIMENSIONS = ("service", "resource_id", "region", "usage_type")
+DEFAULT_DIMENSIONS = ("service", "resource_id", "model", "region", "usage_type")
+# Dimensions that only some records have; skipped when no contributor has a value.
+OPTIONAL_DIMENSIONS = ("model",)
+USAGE_DIMENSIONS = ("resource_id", "usage_type", "model")
 
 
 def _q(value: Decimal) -> Decimal:
@@ -166,7 +184,7 @@ def _grouped(
     end: date,
     filters: CostFilters,
 ) -> dict[str | None, Decimal]:
-    column = getattr(BillingRecord, dimension)
+    column = dimension_column(dimension)
     statement = (
         select(column, func.sum(BillingRecord.cost))
         .where(
@@ -196,7 +214,7 @@ def _usage(
     filters: CostFilters,
 ) -> _UsageTotals:
     """Total usage quantity for one contributor, if it is comparable (one unit, all rows)."""
-    column = getattr(BillingRecord, dimension)
+    column = dimension_column(dimension)
     statement = select(
         func.count(),
         func.count(BillingRecord.usage_quantity),
@@ -279,17 +297,20 @@ def investigate(db: Session, incident: Incident) -> Investigation:
     dimensions: list[DimensionAnalysis] = []
     if baseline_days and current_days and total_change is not None:
         for dimension in DIMENSIONS_FOR_SCOPE.get(incident.scope_type, DEFAULT_DIMENSIONS):
-            dimensions.append(
-                _analyse_dimension(
-                    db,
-                    currency,
-                    dimension,
-                    filters,
-                    (current_start, current_end, current_days),
-                    (baseline_start, baseline_end, baseline_days),
-                    total_change,
-                )
+            analysis = _analyse_dimension(
+                db,
+                currency,
+                dimension,
+                filters,
+                (current_start, current_end, current_days),
+                (baseline_start, baseline_end, baseline_days),
+                total_change,
             )
+            if dimension in OPTIONAL_DIMENSIONS and all(
+                c.key is None for c in analysis.contributors
+            ):
+                continue  # e.g. no AI model usage in this scope
+            dimensions.append(analysis)
 
     explanations, suggestions, confidence, statement = _narrate(
         incident, label, dimensions, total_change, limitations
@@ -360,7 +381,7 @@ def _analyse_dimension(
         contributors.append(
             Contributor(
                 key=key,
-                label=key if key is not None else UNASSIGNED,
+                label=value_label(dimension, key) if key is not None else UNASSIGNED,
                 current_cost=_q(current_cost),
                 baseline_cost=_q(baseline_cost),
                 baseline_daily_avg=_q(base_avg),
@@ -375,7 +396,7 @@ def _analyse_dimension(
     contributors.sort(key=lambda c: (-c.change, c.label))
     top = [c for c in contributors if c.change > 0][:TOP_N]
 
-    if dimension in ("resource_id", "usage_type"):
+    if dimension in USAGE_DIMENSIONS:
         for contributor in top:
             contributor.usage = _compare_usage(
                 db, currency, dimension, contributor, filters, current, baseline
@@ -470,7 +491,12 @@ def _narrate(
         )
         return explanations, suggestions, "low", statement
 
-    primary = dimensions[0]
+    # Lead with the first dimension whose top contributor has a value (AI line items, for
+    # example, often have no resource ID).
+    primary = next(
+        (d for d in dimensions if d.contributors and d.contributors[0].key is not None),
+        dimensions[0],
+    )
     top = primary.contributors[0] if primary.contributors else None
     dominant = (
         top is not None
@@ -535,6 +561,45 @@ def _narrate(
                 )
             )
         _describe_usage(contributor, "Usage type", currency, explanations, suggestions)
+
+    models = by_dimension.get("model")
+    for contributor in models.contributors[:2] if models else []:
+        if contributor.key is None or not _material(contributor):
+            continue
+        if contributor is not top:
+            explanations.append(
+                f"Model '{contributor.label}' contributed {_money(contributor.change, currency)} "
+                f"of the increase ({contributor.share_of_increase_pct}%)."
+            )
+        _describe_usage(contributor, "Model", currency, explanations, suggestions)
+        suggestions.append(
+            Suggestion(
+                f"Review requests to {contributor.label}",
+                "Look for longer prompts or outputs, missing max-token limits, retry loops, "
+                "new features or batch jobs calling the model, and repeated prompts that could "
+                "be cached. Consider whether a smaller model fits the workload.",
+                f"Model '{contributor.label}' cost "
+                f"{_money(contributor.current_daily_avg, currency)} per day during the incident "
+                f"against {_money(contributor.baseline_daily_avg, currency)} in the baseline.",
+            )
+        )
+
+    for contributor in usage_types.contributors[:2] if usage_types else []:
+        if (
+            contributor.key
+            and _material(contributor)
+            and any(h in contributor.key.lower() for h in TOKEN_HINTS)
+            and not (models and models.contributors)
+        ):
+            suggestions.append(
+                Suggestion(
+                    f"Review token usage for {contributor.label}",
+                    "Check prompt and output lengths, max-token limits, retries and caching "
+                    "for the applications calling the model API.",
+                    f"Usage type '{contributor.label}' increased by "
+                    f"{_money(contributor.change, currency)}; its name indicates model tokens.",
+                )
+            )
 
     regions = by_dimension.get("region")
     for contributor in regions.contributors if regions else []:

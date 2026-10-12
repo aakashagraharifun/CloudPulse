@@ -27,7 +27,7 @@ import {
 import { DIMENSION_LABELS } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 
-const MATCH_FIELDS: MatchField[] = ["service", "resource_id", "account_id", "region", "usage_type", "provider"];
+const MATCH_FIELDS: MatchField[] = ["service", "resource_id", "account_id", "region", "usage_type", "provider", "model"];
 
 export function AllocationRules() {
   const admin = useAuth().can("admin");

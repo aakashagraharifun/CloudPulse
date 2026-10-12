@@ -48,11 +48,11 @@ export function HeroSection({
     <section
       className={cn(
         "bg-background text-foreground",
-        "py-12 sm:py-24 md:py-32 px-4",
+        "px-4 pt-10 sm:pt-14 md:pt-16",
         "fade-bottom overflow-hidden pb-0"
       )}
     >
-      <div className="mx-auto flex max-w-container flex-col gap-12 pt-16 sm:gap-24">
+      <div className="mx-auto flex max-w-container flex-col gap-12 sm:gap-24">
         <div className="flex flex-col items-center gap-6 text-center sm:gap-12">
           {/* Badge */}
           {badge && (

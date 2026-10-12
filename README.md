@@ -2,21 +2,22 @@
 
 **Developer-first cloud cost intelligence and anomaly detection.**
 
-CloudPulse turns cloud billing exports into cost analytics, detects unusual spending with explainable statistics, and shows the evidence behind every increase. You see actual versus expected cost, the largest contributors, new resources and regions, whether usage or price drove the change, and what to check next. When the billing data cannot support a conclusion, CloudPulse says so instead of guessing.
+CloudPulse turns cloud, AI model API and SaaS billing exports into cost analytics, detects unusual spending with explainable statistics, and shows the evidence behind every increase. You see actual versus expected cost, the largest contributors, new resources and regions, whether usage or price drove the change, and what to check next. When the billing data cannot support a conclusion, CloudPulse says so instead of guessing.
 
-It runs entirely on your machine. You do not need a cloud account, paid API or AI service. A deterministic synthetic dataset with two injected anomalies is built in.
+It runs entirely on your machine. You do not need a cloud account, paid API or AI service. A deterministic synthetic dataset is built in: 90 days of AWS, Google Cloud, Azure, OpenAI, Anthropic, Gemini and Datadog spend with three injected anomalies.
 
 | | |
 | --- | --- |
 | Frontend | Next.js 16 (App Router, TypeScript strict), Tailwind CSS 4, Recharts 3 |
 | Backend | Python 3.13, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, pandas |
 | Infrastructure | PostgreSQL 16, Redis 7, Celery 5, Mailpit (local e-mail), Docker Compose |
-| Quality | pytest (186 tests, real PostgreSQL), Playwright (10 end-to-end tests), ruff, ESLint, TypeScript, GitHub Actions CI |
+| Quality | pytest (203 tests, real PostgreSQL), Playwright (15 end-to-end tests), ruff, ESLint, TypeScript, GitHub Actions CI |
 
 ## Features (milestones 1–8)
 
-- **Billing ingestion:** CSV upload with size, encoding, header and per-row validation. Errors are reported by line and column, and nothing is imported if any row is invalid. AWS CUR column names are recognised. Identical files and duplicate records are rejected or skipped. Every import's status is tracked.
-- **Cost analytics:** totals, daily, weekly and monthly series, and breakdowns by provider, account, service, region, resource, usage type, project and environment. Each view compares with the previous period. Missing days are shown as gaps, never as zero. Currencies are never mixed. A month-end forecast is included.
+- **Billing ingestion:** CSV upload with size, encoding, header and per-row validation. Errors are reported by line and column, and nothing is imported if any row is invalid. AWS CUR column names are recognised. Provider names such as "Microsoft Azure" or "Google Cloud Platform" are normalized to slugs (`azure`, `gcp`). Identical files and duplicate records are rejected or skipped. Every import's status is tracked.
+- **Multi-cloud and AI spend:** any provider that exports CSV can be imported. Known providers (AWS, Google Cloud, Azure, Oracle, OpenAI, Anthropic, Google Gemini, Mistral, Datadog, Snowflake and more) are grouped into **cloud**, **AI** and **SaaS** categories. AI and LLM usage carries an optional `model` column (for example `gpt-4o` or `claude-sonnet-4-5`) with token counts as the usage quantity.
+- **Cost analytics:** totals, daily, weekly and monthly series, and breakdowns by provider, category, account, service, region, resource, usage type, model, project and environment. Each view compares with the previous period. Missing days are shown as gaps, never as zero. Currencies are never mixed. A month-end forecast is included.
 - **Cost allocation rules:** attribute untagged costs to projects and environments.
 - **Anomaly detection:** same-weekday or rolling **median** baselines, robust z-score, percentage, absolute and new-spend thresholds, and a minimum-history rule. Every decision is persisted with its evidence.
 - **Investigation:** contributors by dimension, new-resource and new-region detection, usage-versus-price analysis, deterministic explanations with a confidence statement, evidence-tied suggestions, and an incident workflow (acknowledge, notes, resolve, reopen) with a timeline. Repeated runs never create duplicate incidents.

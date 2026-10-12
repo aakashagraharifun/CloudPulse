@@ -1,6 +1,7 @@
 """Cost analytics endpoints."""
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -33,8 +34,12 @@ def cost_filters(
     region: str | None = Query(None, max_length=64),
     resource_id: str | None = Query(None, max_length=512),
     usage_type: str | None = Query(None, max_length=255),
+    model: str | None = Query(None, max_length=128, description="AI/LLM model, e.g. gpt-4o."),
     project: str | None = Query(None, max_length=128),
     environment: str | None = Query(None, max_length=128),
+    category: Literal["cloud", "ai", "saas", "other"] | None = Query(
+        None, description="Provider category: cloud, ai (LLM APIs), saas or other."
+    ),
 ) -> CostFilters:
     """Exact-match filters; pass "(unassigned)" to select records without a value."""
     return CostFilters(
@@ -44,8 +49,10 @@ def cost_filters(
         region=region,
         resource_id=resource_id,
         usage_type=usage_type,
+        model=model,
         project=project,
         environment=environment,
+        category=category,
     )
 
 

@@ -105,6 +105,8 @@ class BillingRecord(Base):
     resource_id: Mapped[str | None] = mapped_column(String(512))
     region: Mapped[str | None] = mapped_column(String(64))
     usage_type: Mapped[str | None] = mapped_column(String(255))
+    # AI/LLM model (e.g. "gpt-4o"), when the line item is model usage.
+    model: Mapped[str | None] = mapped_column(String(128), index=True)
     usage_quantity: Mapped[Decimal | None] = mapped_column(QUANTITY)
     usage_unit: Mapped[str | None] = mapped_column(String(64))
     currency: Mapped[str] = mapped_column(String(3), nullable=False)

@@ -23,6 +23,8 @@ const SCOPE_OPTIONS: ScopeType[] = [
   "environment",
   "region",
   "provider",
+  "category",
+  "model",
   "account_id",
   "usage_type",
   "resource_id",

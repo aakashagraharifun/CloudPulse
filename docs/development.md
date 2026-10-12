@@ -77,7 +77,7 @@ The worker is optional for local use: imports already run detection and budget c
 
 ```powershell
 # Backend (from backend/, venv active)
-pytest                      # 186 tests; uses database "cloudpulse_test" (auto-created)
+pytest                      # 203 tests; uses database "cloudpulse_test" (auto-created)
 ruff check .                # lint
 ruff format --check .       # formatting (run "ruff format ." to fix)
 

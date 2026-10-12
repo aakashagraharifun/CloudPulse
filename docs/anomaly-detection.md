@@ -68,10 +68,10 @@ The same event can appear in several scopes (for example *Total spend* and *Serv
 For an incident covering days *S…E*:
 
 - **Baseline period:** the `baseline_window_days` days before *S*. Averages use only days that have data.
-- For each member of each relevant dimension (service, resource, region, usage type, project, account; the incident's own dimension is excluded):
+- For each member of each relevant dimension (service, resource, model, region, usage type, project, account; the incident's own dimension is excluded; *model* is left out when no contributor has one):
   `change = cost(S…E) − baseline daily average × number of incident days`
 - Contributors are ranked by change and show their **share of the total increase**. Members with no baseline cost are flagged **new**.
-- **Usage versus price.** This is only computed for resources and usage types whose rows all have a quantity in a single unit.
+- **Usage versus price.** This is only computed for resources, usage types and models whose rows all have a quantity in a single unit (for AI usage, tokens).
 
 | Driver | Rule |
 | --- | --- |
@@ -82,7 +82,7 @@ For an incident covering days *S…E*:
 | usage not available | quantities are missing, so the cause type cannot be determined (stated explicitly) |
 
 - **Explanations** are fixed sentence templates filled with measured values. Contributors below 10% of the increase stay in the tables but are not narrated individually.
-- **Suggestions** are only produced from evidence: a new resource ("confirm it is expected"), a new region, a usage-driven increase, a rate change, a usage type whose name indicates data transfer, or a large share of untagged spend. Each suggestion carries an **Evidence** line.
+- **Suggestions** are only produced from evidence: a new resource ("confirm it is expected"), a new region, a usage-driven increase, a rate change, a usage type whose name indicates data transfer, a model whose cost increased materially ("review requests to …": prompt and output sizes, max-token limits, retries, caching, a smaller model), or a large share of untagged spend. Each suggestion carries an **Evidence** line.
 - **Confidence:**
   - *high*: the top contributor explains ≥ 80% of the increase.
   - *medium*: it explains 50–80%.
@@ -91,7 +91,7 @@ For an incident covering days *S…E*:
 
 ## The sample dataset
 
-The synthetic dataset (`backend/app/services/ingestion/sample_data.py`) produces exactly four incidents with the default settings. `tests/test_incidents.py` verifies this:
+The synthetic dataset (`backend/app/services/ingestion/sample_data.py`) produces exactly five incidents with the default settings. `tests/test_incidents.py` verifies this:
 
 | Incident | Dates (relative to end) | Why |
 | --- | --- | --- |
@@ -99,6 +99,7 @@ The synthetic dataset (`backend/app/services/ingestion/sample_data.py`) produces
 | Service: Amazon Virtual Private Cloud, low | end − 11 | Same event, +$50 (+672%), below the $100 amount for medium |
 | Total spend, high | end − 4 … end − 3 | New p4d.24xlarge GPU instance (+$1,379) |
 | Service: Amazon Elastic Compute Cloud, high | end − 4 … end − 3 | Same event (+$1,376, 100% one new resource) |
+| Service: Claude API, low | end − 6 | `claude-sonnet-4-5` output tokens ≈ 10× (+$28, +378%), usage-driven; too small to move total spend past the thresholds |
 
 Normal noise (±4–10%), weekend dips and +0.2%/day growth produce **no** false positives.
 

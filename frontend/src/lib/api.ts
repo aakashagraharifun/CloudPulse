@@ -120,8 +120,10 @@ export type Dimension =
   | "region"
   | "resource_id"
   | "usage_type"
+  | "model"
   | "project"
-  | "environment";
+  | "environment"
+  | "category";
 export type ScopeType = "total" | Dimension;
 
 // --- auth & users --------------------------------------------------------------
@@ -300,7 +302,7 @@ export type Forecast = {
 
 // --- allocation rules ----------------------------------------------------------
 
-export type MatchField = "provider" | "account_id" | "service" | "resource_id" | "region" | "usage_type";
+export type MatchField = "provider" | "account_id" | "service" | "resource_id" | "region" | "usage_type" | "model";
 
 export type AllocationRuleInput = {
   name: string;

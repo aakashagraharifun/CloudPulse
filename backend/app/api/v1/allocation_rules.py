@@ -19,7 +19,7 @@ from app.services.normalization.allocation import reapply_allocation_rules
 router = APIRouter(prefix="/allocation-rules", tags=["allocation rules"])
 
 MatchFieldLiteral = Literal[
-    "provider", "account_id", "service", "resource_id", "region", "usage_type"
+    "provider", "account_id", "service", "resource_id", "region", "usage_type", "model"
 ]
 
 

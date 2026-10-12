@@ -33,6 +33,7 @@ import {
 } from "@/lib/api";
 import {
   addDays,
+  dimensionValueLabel,
   formatDate,
   formatDateRange,
   formatMoney,
@@ -42,7 +43,7 @@ import {
   scopeLabel,
   toNumber,
 } from "@/lib/format";
-import { useApi } from "@/lib/hooks";
+import { useApi, type ApiState } from "@/lib/hooks";
 
 const RANGES = [30, 60, 90] as const;
 
@@ -58,7 +59,7 @@ export function OverviewPage() {
         <Card>
           <EmptyState
             title="No billing data yet"
-            description="Load the built-in synthetic dataset (90 days with two injected anomalies) or upload your own billing CSV to see cost analytics."
+            description="Load the built-in synthetic dataset (90 days of cloud, AI and SaaS spend with three injected anomalies) or upload your own billing CSV to see cost analytics."
             action={
               <>
                 <LoadSampleButton />
@@ -98,6 +99,16 @@ function Overview({ currency }: { currency: string }) {
     asOf
       ? `/costs/breakdown${qs({ currency, dimension: "service", start: addDays(asOf, -29), end: asOf, limit: 6 })}`
       : null,
+  );
+  const last30 = asOf ? { start: addDays(asOf, -29), end: asOf } : null;
+  const categories = useApi<Breakdown>(
+    last30 ? `/costs/breakdown${qs({ currency, dimension: "category", ...last30, limit: 4 })}` : null,
+  );
+  const providers = useApi<Breakdown>(
+    last30 ? `/costs/breakdown${qs({ currency, dimension: "provider", ...last30, limit: 6 })}` : null,
+  );
+  const models = useApi<Breakdown>(
+    last30 ? `/costs/breakdown${qs({ currency, dimension: "model", category: "ai", ...last30, limit: 6 })}` : null,
   );
   const counts = useApi<IncidentCounts>("/incidents/counts");
   const incidents = useApi<Page<IncidentSummary>>("/incidents?limit=5");
@@ -254,6 +265,32 @@ function Overview({ currency }: { currency: string }) {
         </Card>
       </div>
 
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <DimensionCard
+          title="Spend by category"
+          description="Cloud, AI model APIs and SaaS · last 30 days"
+          dimension="category"
+          result={categories}
+          currency={currency}
+        />
+        <DimensionCard
+          title="Spend by provider"
+          description="Last 30 days · share · change"
+          dimension="provider"
+          result={providers}
+          currency={currency}
+        />
+        <DimensionCard
+          title="AI model spend"
+          description="LLM and embedding APIs · last 30 days"
+          dimension="model"
+          filter={{ category: "ai" }}
+          result={models}
+          currency={currency}
+          emptyText="No AI model usage in this period. Billing rows with a model column (e.g. OpenAI or Anthropic usage exports) appear here."
+        />
+      </div>
+
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card
           className="xl:col-span-2"
@@ -369,5 +406,58 @@ function Overview({ currency }: { currency: string }) {
         </Card>
       </div>
     </>
+  );
+}
+
+function DimensionCard({
+  title,
+  description,
+  dimension,
+  filter = {},
+  result,
+  currency,
+  emptyText,
+}: {
+  title: string;
+  description: string;
+  dimension: "category" | "provider" | "model";
+  filter?: Record<string, string>;
+  result: ApiState<Breakdown>;
+  currency: string;
+  emptyText?: string;
+}) {
+  return (
+    <Card
+      title={title}
+      description={description}
+      action={
+        <Link
+          href={`/dashboard/costs${qs({ ...filter, group: dimension })}`}
+          className="text-xs font-medium text-brand-700 hover:underline"
+        >
+          Explore
+        </Link>
+      }
+    >
+      {result.error ? (
+        <ErrorState message={errorMessage(result.error)} onRetry={result.reload} />
+      ) : !result.data ? (
+        <LoadingState rows={4} />
+      ) : (
+        <RankedBars
+          currency={currency}
+          emptyText={emptyText}
+          rows={result.data.items.map((item) => ({
+            key: item.label,
+            label: item.key === null ? item.label : dimensionValueLabel(dimension, item.key),
+            value: Number(item.cost),
+            share: item.share_pct,
+            change: toNumber(item.change_abs),
+            changePct: item.change_pct,
+            href: `/dashboard/costs${qs({ ...filter, [dimension]: item.key ?? "(unassigned)" })}`,
+          }))}
+        />
+      )}
+    </Card>
   );
 }

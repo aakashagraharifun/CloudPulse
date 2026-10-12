@@ -3,7 +3,7 @@
 
 This document defines how CloudPulse looks and behaves. Its goal is a calm, professional analytics product where **the data is the loudest thing on the screen** and every number can be trusted.
 
-The landing page structure follows the conventions of modern FinOps products such as CloudZero: a strong hero, three value pillars, a "raw spend to real answers" workflow, feature deep-dives, FAQ and a closing call to action. CloudPulse uses **no third-party branding, customer logos, testimonials or invented statistics**. Every claim on the landing page describes something the product actually does.
+The landing page structure follows the conventions of modern FinOps products such as CloudZero: a strong hero, three value pillars, a "raw spend to real answers" workflow, feature deep-dives, FAQ and a closing call to action. CloudPulse uses **no customer logos, testimonials or invented statistics**; the only third-party marks are the provider strip, which names data sources CloudPulse can import (see section 10). Every claim on the landing page describes something the product actually does.
 
 ---
 
@@ -149,3 +149,8 @@ The project is set up for [shadcn/ui](https://ui.shadcn.com) (`frontend/componen
 - **Landing hero** (`components/ui/hero-section.tsx`, with `mockup.tsx` and `glow.tsx`):
   - It renders on the ink palette, with a brand-blue glow and staggered entrance animations (`animate-appear`, `delay-*`). The animations are switched off for `prefers-reduced-motion`.
   - Its image is a real screenshot of the dashboard with the built-in sample data (`public/images/cloudpulse-dashboard.png`), labelled *Sample data*.
+  - It starts directly below the header (no badge, small top padding) so the headline is above the fold.
+- **Provider strip** (`components/brand/provider-marquee.tsx`), directly below the hero on the light background:
+  - Names the providers whose exports CloudPulse recognises, as monochrome marks (`currentColor`, muted foreground) with a wordmark. The marks come from [Simple Icons](https://simpleicons.org) (CC0, `components/brand/brand-icons.ts`). AWS, Microsoft Azure, OpenAI and Oracle are not in Simple Icons, so they are shown by name with a neutral Lucide icon, never a lookalike logo. A footnote says the names belong to their owners and do not imply endorsement.
+  - The track holds the list twice and moves **left to right** (`animate-marquee-right`, 60s linear) for a seamless loop, with faded edges (`fade-x`). It pauses on hover. Only the first copy is exposed to assistive technology (`aria-hidden` on the duplicate).
+  - Under `prefers-reduced-motion` the animation stops, the duplicate is hidden and the list wraps onto several centered lines.

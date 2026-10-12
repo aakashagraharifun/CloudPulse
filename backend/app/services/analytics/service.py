@@ -19,11 +19,12 @@ from decimal import Decimal
 from enum import StrEnum
 
 from fastapi import status
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models import BillingImport, BillingRecord, ImportSource, ImportStatus
+from app.services.providers import CATEGORY_LABELS, category_expression
 
 UNASSIGNED = "(unassigned)"
 ZERO = Decimal("0")
@@ -36,8 +37,18 @@ class Dimension(StrEnum):
     REGION = "region"
     RESOURCE_ID = "resource_id"
     USAGE_TYPE = "usage_type"
+    MODEL = "model"
     PROJECT = "project"
     ENVIRONMENT = "environment"
+    # Computed from the provider: cloud | ai | saas | other (see app.services.providers).
+    CATEGORY = "category"
+
+
+def dimension_column(name: str) -> ColumnElement:
+    """The SQL expression a dimension groups and filters by."""
+    if name == Dimension.CATEGORY:
+        return category_expression()
+    return getattr(BillingRecord, name)
 
 
 class Granularity(StrEnum):
@@ -56,15 +67,17 @@ class CostFilters:
     region: str | None = None
     resource_id: str | None = None
     usage_type: str | None = None
+    model: str | None = None
     project: str | None = None
     environment: str | None = None
+    category: str | None = None
 
     def apply(self, statement: Select) -> Select:
         for item in fields(self):
             value = getattr(self, item.name)
             if value is None:
                 continue
-            column = getattr(BillingRecord, item.name)
+            column = dimension_column(item.name)
             statement = statement.where(
                 column.is_(None) if value == UNASSIGNED else column == value
             )
@@ -369,7 +382,7 @@ def costs_by_dimension(
     end: date,
     filters: CostFilters,
 ) -> dict[str | None, Decimal]:
-    column = getattr(BillingRecord, dimension.value)
+    column = dimension_column(dimension.value)
     statement = (
         select(column, func.sum(BillingRecord.cost))
         .where(
@@ -380,6 +393,14 @@ def costs_by_dimension(
         .group_by(column)
     )
     return dict(db.execute(filters.apply(statement)).all())
+
+
+def _item_label(dimension: Dimension, key: str | None) -> str:
+    if key is None:
+        return UNASSIGNED
+    if dimension == Dimension.CATEGORY:
+        return CATEGORY_LABELS.get(key, key)
+    return key
 
 
 def get_breakdown(
@@ -402,7 +423,7 @@ def get_breakdown(
     items = [
         BreakdownItem(
             key=key,
-            label=key if key is not None else UNASSIGNED,
+            label=_item_label(dimension, key),
             cost=cost,
             share_pct=round(float(cost / total * 100), 2) if total > 0 else None,
             previous_cost=previous.get(key, ZERO),

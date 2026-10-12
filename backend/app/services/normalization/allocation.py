@@ -80,6 +80,7 @@ def reapply_allocation_rules(db: Session) -> int:
         BillingRecord.resource_id,
         BillingRecord.region,
         BillingRecord.usage_type,
+        BillingRecord.model,
         BillingRecord.project_tag,
         BillingRecord.environment_tag,
         BillingRecord.project,

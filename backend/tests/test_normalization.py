@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.services.normalization.allocation import AllocationEngine, CompiledRule
 from app.services.normalization.normalizer import (
     FileValidationError,
     normalize_csv,
@@ -188,3 +189,56 @@ def test_normalize_header() -> None:
     assert normalize_header("lineItem/UsageStartDate") == "lineitem_usagestartdate"
     assert normalize_header("﻿ Usage Date ") == "usage_date"
     assert normalize_header("resourceTags/user:project") == "resourcetags_user_project"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Microsoft Azure", "azure"),
+        ("Google Cloud Platform", "gcp"),
+        ("  Amazon  Web Services ", "aws"),
+        ("OpenAI", "openai"),
+        ("Anthropic", "anthropic"),
+        ("Gemini", "google-ai"),
+        ("my-private-cloud", "my-private-cloud"),  # unknown providers are kept
+    ],
+)
+def test_provider_names_are_normalized_to_slugs(raw: str, expected: str) -> None:
+    [record] = run(f"{HEADER}\n2026-10-01,{raw},Svc,USD,1\n").records
+    assert record.provider == expected
+
+
+def test_model_usage_is_imported_with_its_model() -> None:
+    text = (
+        "date,provider,service,model_name,usage_type,usage_quantity,usage_unit,currency,cost\n"
+        "2026-10-01,Anthropic,Claude API,claude-sonnet-4-5,output_tokens,180000,tokens,USD,2.7\n"
+        "2026-10-01,aws,EC2,,BoxUsage,24,Hrs,USD,9.2\n"
+    )
+    claude, ec2 = run(text).records
+    assert (claude.provider, claude.model, claude.usage_quantity) == (
+        "anthropic",
+        "claude-sonnet-4-5",
+        Decimal("180000"),
+    )
+    assert ec2.model is None
+
+
+def test_fingerprint_distinguishes_models_and_is_unchanged_without_one() -> None:
+    header = "usage_date,provider,service,model,currency,cost"
+    gpt = run(f"{header}\n2026-10-01,openai,OpenAI API,gpt-4o,USD,1\n").records[0]
+    mini = run(f"{header}\n2026-10-01,openai,OpenAI API,gpt-4o-mini,USD,1\n").records[0]
+    assert gpt.fingerprint != mini.fingerprint
+    # A blank model gives the same fingerprint as a file without the column, so files
+    # imported before the model field existed are still recognised as duplicates.
+    blank = run(f"{header}\n2026-10-01,aws,EC2,,USD,1\n").records[0]
+    without = run(f"{HEADER}\n2026-10-01,aws,EC2,USD,1\n").records[0]
+    assert blank.fingerprint == without.fingerprint
+
+
+def test_allocation_rules_can_match_the_model() -> None:
+    engine = AllocationEngine(
+        [CompiledRule("model", "contains", "claude", "support-assistant", None)]
+    )
+    assert engine.attribute({"model": "claude-sonnet-4-5"}) == ("support-assistant", None)
+    assert engine.attribute({"model": "gpt-4o"}) == (None, None)
+    assert engine.attribute({"model": None}) == (None, None)

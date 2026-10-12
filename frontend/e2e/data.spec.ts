@@ -30,3 +30,14 @@ test("the cost explorer drills down from a breakdown row", async ({ page }) => {
   await page.getByLabel("Group by").selectOption("usage_type");
   await expect(page.getByText("NatGateway-Bytes").first()).toBeVisible();
 });
+
+test("AI model spend is shown next to cloud spend and drills into the explorer", async ({ page }) => {
+  await page.goto("/dashboard");
+  await expect(page.getByText("Spend by category")).toBeVisible();
+  await expect(page.getByText("AI & LLM APIs")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Microsoft Azure/ })).toBeVisible();
+  await page.getByRole("link", { name: /claude-sonnet-4-5/ }).click();
+  await expect(page).toHaveURL(/category=ai/);
+  await expect(page).toHaveURL(/model=claude-sonnet-4-5/);
+  await expect(page.getByText("Model: claude-sonnet-4-5").first()).toBeVisible();
+});

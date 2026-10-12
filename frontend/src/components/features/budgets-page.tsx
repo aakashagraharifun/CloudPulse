@@ -32,6 +32,7 @@ import {
 } from "@/lib/api";
 import {
   DIMENSION_LABELS,
+  dimensionValueLabel,
   addDays,
   formatDate,
   formatDateRange,
@@ -43,7 +44,17 @@ import {
 } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 
-const SCOPES: ScopeType[] = ["total", "service", "project", "environment", "provider", "region", "account_id"];
+const SCOPES: ScopeType[] = [
+  "total",
+  "service",
+  "project",
+  "environment",
+  "provider",
+  "category",
+  "model",
+  "region",
+  "account_id",
+];
 const STATE_BADGE = {
   ok: { tone: "good", label: "Within budget" },
   warning: { tone: "warning", label: "At risk" },
@@ -419,7 +430,11 @@ function BudgetForm({
               placeholder="Exact value as it appears in billing data"
             />
             <datalist id="b-scope-values">
-              {suggestions.data?.items.map((i) => <option key={i.label} value={i.key ?? "(unassigned)"} />)}
+              {suggestions.data?.items.map((i) => (
+                <option key={i.label} value={i.key ?? "(unassigned)"}>
+                  {i.key === null ? i.label : dimensionValueLabel(scopeType, i.key)}
+                </option>
+              ))}
             </datalist>
           </Field>
         )}

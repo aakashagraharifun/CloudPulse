@@ -30,7 +30,13 @@ from app.models.anomaly import (
     IncidentStatus,
     Severity,
 )
-from app.services.analytics.service import UNASSIGNED, CostFilters, Dimension, coverage_days
+from app.services.analytics.service import (
+    UNASSIGNED,
+    CostFilters,
+    Dimension,
+    coverage_days,
+    dimension_column,
+)
 from app.services.anomaly_detection.engine import (
     DOW_LOOKBACK_DAYS,
     ZERO,
@@ -38,6 +44,7 @@ from app.services.anomaly_detection.engine import (
     PointEvaluation,
     evaluate_point,
 )
+from app.services.providers import value_label
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +61,18 @@ DIMENSION_LABELS = {
     "region": "Region",
     "resource_id": "Resource",
     "usage_type": "Usage type",
+    "model": "Model",
     "project": "Project",
     "environment": "Environment",
+    "category": "Category",
 }
 
 
 def scope_label(scope_type: str, scope_value: str) -> str:
     if scope_type == TOTAL_SCOPE:
         return "Total spend"
-    return f"{DIMENSION_LABELS.get(scope_type, scope_type)}: {scope_value}"
+    value = value_label(scope_type, scope_value)
+    return f"{DIMENSION_LABELS.get(scope_type, scope_type)}: {value}"
 
 
 def scope_filters(scope_type: str, scope_value: str) -> CostFilters:
@@ -134,7 +144,7 @@ def load_scope_series(
         ).all()
         series[""] = dict(rows)
         return series
-    column = getattr(BillingRecord, scope_type)
+    column = dimension_column(scope_type)
     rows = db.execute(
         select(column, BillingRecord.usage_date, func.sum(BillingRecord.cost))
         .where(*where)

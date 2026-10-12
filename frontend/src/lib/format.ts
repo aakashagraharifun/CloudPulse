@@ -127,10 +127,50 @@ export const DIMENSION_LABELS: Record<string, string> = {
   region: "Region",
   resource_id: "Resource",
   usage_type: "Usage type",
+  model: "Model",
   project: "Project",
   environment: "Environment",
+  category: "Category",
 };
 
+// Display names for the provider slugs CloudPulse knows (backend: app/services/providers.py).
+// Any other provider is shown as it appears in the billing data.
+export const PROVIDER_NAMES: Record<string, string> = {
+  aws: "Amazon Web Services",
+  gcp: "Google Cloud",
+  azure: "Microsoft Azure",
+  oci: "Oracle Cloud",
+  alibaba: "Alibaba Cloud",
+  digitalocean: "DigitalOcean",
+  cloudflare: "Cloudflare",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  "google-ai": "Google Gemini API",
+  mistral: "Mistral AI",
+  deepseek: "DeepSeek",
+  huggingface: "Hugging Face",
+  datadog: "Datadog",
+  snowflake: "Snowflake",
+  databricks: "Databricks",
+  mongodb: "MongoDB Atlas",
+};
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  cloud: "Cloud infrastructure",
+  ai: "AI & LLM APIs",
+  saas: "SaaS & data platforms",
+  other: "Other",
+};
+
+/** Human-readable form of a dimension value, e.g. provider "openai" -> "OpenAI". */
+export function dimensionValueLabel(dimension: string, value: string): string {
+  if (dimension === "provider") return PROVIDER_NAMES[value] ?? value;
+  if (dimension === "category") return CATEGORY_LABELS[value] ?? value;
+  return value;
+}
+
 export function scopeLabel(scopeType: string, scopeValue: string): string {
-  return scopeType === "total" ? "Total spend" : `${DIMENSION_LABELS[scopeType] ?? scopeType}: ${scopeValue}`;
+  return scopeType === "total"
+    ? "Total spend"
+    : `${DIMENSION_LABELS[scopeType] ?? scopeType}: ${dimensionValueLabel(scopeType, scopeValue)}`;
 }

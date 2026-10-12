@@ -18,8 +18,10 @@ ScopeLiteral = Literal[
     "region",
     "resource_id",
     "usage_type",
+    "model",
     "project",
     "environment",
+    "category",
 ]
 
 

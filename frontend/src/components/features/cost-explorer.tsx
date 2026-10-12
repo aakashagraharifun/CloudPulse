@@ -32,6 +32,7 @@ import {
 import {
   DIMENSION_LABELS,
   addDays,
+  dimensionValueLabel,
   formatDate,
   formatDateRange,
   formatMoney,
@@ -44,16 +45,29 @@ import {
 import { useApi } from "@/lib/hooks";
 
 const FILTER_KEYS: Dimension[] = [
+  "category",
   "provider",
   "account_id",
   "service",
   "region",
   "resource_id",
   "usage_type",
+  "model",
   "project",
   "environment",
 ];
-const GROUP_BY: Dimension[] = ["service", "project", "environment", "region", "provider", "resource_id", "usage_type", "account_id"];
+const GROUP_BY: Dimension[] = [
+  "service",
+  "provider",
+  "category",
+  "model",
+  "project",
+  "environment",
+  "region",
+  "resource_id",
+  "usage_type",
+  "account_id",
+];
 const PRESETS = [
   { id: "7", label: "7 days", days: 7 },
   { id: "30", label: "30 days", days: 30 },
@@ -240,7 +254,7 @@ function Explorer({ currency }: { currency: string }) {
                 className="inline-flex items-center gap-1.5 rounded-md bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100"
                 aria-label={`Remove filter ${DIMENSION_LABELS[key]}: ${value}`}
               >
-                {DIMENSION_LABELS[key]}: <span className="max-w-48 truncate">{value}</span>
+                {DIMENSION_LABELS[key]}: <span className="max-w-48 truncate">{dimensionValueLabel(key, value)}</span>
                 <span aria-hidden>✕</span>
               </button>
             ))}
@@ -297,7 +311,7 @@ function Explorer({ currency }: { currency: string }) {
           title={`${granularity === "day" ? "Daily" : granularity === "week" ? "Weekly" : "Monthly"} spend`}
           description={
             filterEntries.length
-              ? filterEntries.map(([k, v]) => `${DIMENSION_LABELS[k]}: ${v}`).join(" · ")
+              ? filterEntries.map(([k, v]) => `${DIMENSION_LABELS[k]}: ${dimensionValueLabel(k, v)}`).join(" · ")
               : "All spend"
           }
         >
@@ -415,22 +429,27 @@ function BreakdownTable({
             <tbody className="divide-y divide-slate-100">
               {visible.map((item) => {
                 const change = toNumber(item.change_abs) ?? 0;
+                const label = item.key === null ? item.label : dimensionValueLabel(groupBy, item.key);
                 return (
                   <tr key={item.label} className="hover:bg-slate-50">
                     <td className="max-w-xs px-5 py-2.5">
                       {filtered ? (
-                        <span className="block truncate text-slate-800" title={item.label}>{item.label}</span>
+                        <span className="block truncate text-slate-800" title={label}>{label}</span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => onSelect(item.key ?? "(unassigned)")}
                           className="block max-w-full truncate text-left font-medium text-brand-700 hover:underline"
-                          title={`Filter by ${item.label}`}
+                          title={`Filter by ${label}`}
                         >
-                          {item.label}
+                          {label}
                         </button>
                       )}
-                      {item.key === null && <Badge className="mt-1">No {DIMENSION_LABELS[groupBy].toLowerCase()} tag</Badge>}
+                      {item.key === null && (
+                        <Badge className="mt-1">
+                          {groupBy === "model" ? "Not model usage" : `No ${DIMENSION_LABELS[groupBy].toLowerCase()} tag`}
+                        </Badge>
+                      )}
                     </td>
                     <td className="tabular px-3 py-2.5 text-right font-medium text-slate-900">
                       {formatMoney(item.cost, currency)}
