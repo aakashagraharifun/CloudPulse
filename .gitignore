@@ -1,18 +1,34 @@
+# Secrets and local environment files
 .env
 .env.*
 !.env.example
 
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+*.egg-info/
+.ruff_cache/
 
+# Node / Next.js
 node_modules/
 .next/
+out/
 dist/
 build/
+*.tsbuildinfo
+next-env.d.ts
 
+# Test output
 .pytest_cache/
 .coverage
+htmlcov/
 playwright-report/
 test-results/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

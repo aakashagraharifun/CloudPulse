@@ -1,0 +1,7 @@
+usage_date,provider,service,resource_id,region,currency,cost,project
+2026-09-01,aws,Amazon Elastic Compute Cloud,i-0a1b2c3d4e5f60718,us-east-1,USD,38.42,storefront
+09/02/2026,aws,Amazon Elastic Compute Cloud,i-0a1b2c3d4e5f60718,us-east-1,USD,38.42,storefront
+2026-09-03,aws,Amazon Elastic Compute Cloud,i-0a1b2c3d4e5f60718,us-east-1,USD,"1,038.42",storefront
+2026-09-04,aws,,i-0a1b2c3d4e5f60718,us-east-1,USD,38.42,storefront
+2026-09-05,aws,Amazon Elastic Compute Cloud,i-0a1b2c3d4e5f60718,us-east-1,US Dollars,38.42,storefront
+2026-09-06,aws,Amazon Elastic Compute Cloud,i-0a1b2c3d4e5f60718,us-east-1,USD,38.42

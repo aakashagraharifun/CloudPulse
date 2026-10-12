@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* CloudPulse design tokens - see docs/design.md */
+@theme {
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Code", monospace;
+
+  --color-brand-50: #eef5fd;
+  --color-brand-100: #cde2fb;
+  --color-brand-200: #9ec5f4;
+  --color-brand-500: #3987e5;
+  --color-brand-600: #2a78d6;
+  --color-brand-700: #1c5cab;
+  --color-brand-800: #184f95;
+  --color-ink: #0b1b33;
+  --color-ink-soft: #13294a;
+
+  --color-good: #0ca30c;
+  --color-good-text: #006300;
+  --color-warning: #fab219;
+  --color-serious: #ec835a;
+  --color-critical: #d03b3b;
+
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #ffffff;
+  color: var(--color-slate-900);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+}
+
+/* Recharts: keep the focus outline off the SVG surface itself */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

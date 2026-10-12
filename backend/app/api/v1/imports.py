@@ -1,0 +1,177 @@
+"""Billing import endpoints."""
+
+import csv
+import io
+
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings, get_settings
+from app.core.errors import AppError, ConflictError
+from app.db.session import get_db
+from app.models import BillingImport, ImportSource, ImportStatus
+from app.schemas.common import Page
+from app.schemas.imports import CanonicalField, ImportDetail, ImportSchemaResponse, ImportSummary
+from app.services.ingestion import service
+from app.services.ingestion.sample_data import default_end_date, generate_sample_csv
+from app.services.normalization.schema import CANONICAL_FIELDS
+from app.services.pipeline import run_post_import_evaluation
+
+router = APIRouter(prefix="/imports", tags=["imports"])
+
+# Multipart framing adds a little overhead on top of the file itself.
+_MULTIPART_OVERHEAD_BYTES = 64 * 1024
+_IMPORT_FAILED_RESPONSES = {
+    409: {"description": "The identical file was already imported."},
+    413: {"description": "The file exceeds the upload size limit."},
+    415: {"description": "The file is not a .csv file."},
+    422: {"description": "The file failed validation; `error.details` holds the import."},
+}
+
+
+def _finish(db: Session, billing_import: BillingImport) -> ImportDetail:
+    detail = ImportDetail.model_validate(billing_import)
+    if billing_import.status == ImportStatus.FAILED:
+        raise AppError(
+            billing_import.error_summary or "The file failed validation.",
+            code="import_validation_failed",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            details=detail.model_dump(mode="json"),
+        )
+    if billing_import.rows_inserted > 0:
+        run_post_import_evaluation(db)
+    return detail
+
+
+@router.get("/schema", response_model=ImportSchemaResponse, summary="Canonical CSV schema")
+def import_schema(settings: Settings = Depends(get_settings)) -> ImportSchemaResponse:
+    return ImportSchemaResponse(
+        fields=[
+            CanonicalField(
+                name=spec.name,
+                required=spec.required,
+                description=spec.description,
+                example=spec.example,
+                accepted_headers=list(spec.aliases),
+            )
+            for spec in CANONICAL_FIELDS
+        ],
+        max_upload_bytes=settings.max_upload_bytes,
+        max_rows=settings.max_upload_rows,
+    )
+
+
+@router.get(
+    "/template.csv",
+    summary="Download a CSV template",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+def import_template() -> Response:
+    buffer = io.StringIO(newline="")
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow([spec.name for spec in CANONICAL_FIELDS])
+    writer.writerow([spec.example for spec in CANONICAL_FIELDS])
+    return Response(
+        buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="cloudpulse-billing-template.csv"'},
+    )
+
+
+@router.post(
+    "",
+    response_model=ImportDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a billing CSV",
+    responses=_IMPORT_FAILED_RESPONSES,
+)
+def upload_billing_file(
+    request: Request,
+    file: UploadFile = File(..., description="Billing CSV (UTF-8)"),
+    is_sample: bool = Form(False, description="Mark the file as synthetic / sample data"),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ImportDetail:
+    # Reject oversized requests early using the declared length, then re-check the
+    # actual bytes read (the header can be absent or wrong).
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit():
+        service.validate_file_size(int(declared) - _MULTIPART_OVERHEAD_BYTES, settings)
+    filename = service.sanitize_filename(file.filename)
+    service.validate_file_type(filename)
+    content = file.file.read(settings.max_upload_bytes + 1)
+    service.validate_file_size(len(content), settings)
+    billing_import = service.import_billing_file(
+        db,
+        filename=filename,
+        content=content,
+        settings=settings,
+        source=ImportSource.SAMPLE if is_sample else ImportSource.UPLOAD,
+    )
+    return _finish(db, billing_import)
+
+
+@router.post(
+    "/sample",
+    response_model=ImportDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Load the built-in synthetic dataset (90 days, with injected anomalies)",
+    responses={409: {"description": "Sample data is already loaded."}},
+)
+def load_sample_data(
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
+) -> ImportDetail:
+    existing = db.scalar(
+        select(BillingImport).where(
+            BillingImport.source == ImportSource.SAMPLE,
+            BillingImport.status == ImportStatus.COMPLETED,
+        )
+    )
+    if existing is not None:
+        raise ConflictError(
+            f"Sample data is already loaded (import #{existing.id}). "
+            "Delete that import first to reload it.",
+            details={"import_id": existing.id},
+        )
+    end = default_end_date()
+    content = generate_sample_csv(end).encode("utf-8")
+    billing_import = service.import_billing_file(
+        db,
+        filename=f"cloudpulse-sample-billing-90d-to-{end.isoformat()}.csv",
+        content=content,
+        settings=settings,
+        source=ImportSource.SAMPLE,
+    )
+    return _finish(db, billing_import)
+
+
+@router.get("", response_model=Page[ImportSummary], summary="List imports (newest first)")
+def list_imports(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> Page[ImportSummary]:
+    items, total = service.list_imports(db, limit=limit, offset=offset)
+    return Page[ImportSummary](
+        items=[ImportSummary.model_validate(i) for i in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/{import_id}", response_model=ImportDetail, summary="Import status and errors")
+def get_import(import_id: int, db: Session = Depends(get_db)) -> ImportDetail:
+    return ImportDetail.model_validate(service.get_import(db, import_id))
+
+
+@router.delete(
+    "/{import_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an import and all of its billing records",
+)
+def delete_import(import_id: int, db: Session = Depends(get_db)) -> Response:
+    service.delete_import(db, import_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
