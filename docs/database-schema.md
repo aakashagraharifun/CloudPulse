@@ -42,17 +42,38 @@ One row per upload attempt, whatever its outcome.
 | --- | --- |
 | `id` | PK |
 | `filename` | Sanitized display name (never used as a path) |
-| `source` | `upload` \| `sample`. Sample data is labelled in the UI |
+| `source` | `upload` \| `sample` \| `connector`. Sample data is labelled in the UI |
+| `connector_id` | FK → `connectors` (SET NULL); set for connector syncs |
 | `file_sha256`, `file_size_bytes` | File identity |
-| `detected_format` | `cloudpulse` \| `aws_cur` |
+| `detected_format` | `cloudpulse` \| `aws_cur` \| `aws_cost_explorer` \| `openai_costs` \| `anthropic_cost_report` |
 | `status` | `processing` \| `completed` \| `failed` |
 | `rows_total`, `rows_inserted`, `rows_duplicate`, `rows_invalid` | Outcome counters |
+| `rows_replaced` | Connector syncs: stale records of earlier syncs removed from the sync window |
 | `errors` (JSONB) | Up to 200 `{line, column, message}` entries |
 | `error_summary` | Human-readable summary |
 | `currencies` (JSONB), `date_start`, `date_end` | What the file contained |
 | `created_at`, `updated_at`, `completed_at` | |
 
-The partial unique index `uq_billing_imports_completed_sha256` on `file_sha256 WHERE status = 'completed'` means the same file can be completed only once, while failed attempts can be retried.
+The partial unique index `uq_billing_imports_completed_sha256` on `file_sha256 WHERE status = 'completed' AND source <> 'connector'` means the same file can be completed only once, while failed attempts can be retried. Connector syncs are exempt because a provider can restate data back to an earlier state; they are reconciled per sync window instead.
+
+### `connectors`
+One configured live billing connector.
+
+| Column | Notes |
+| --- | --- |
+| `id` | PK |
+| `kind` | `aws_cur_s3` \| `aws_cost_explorer` \| `openai_costs` \| `anthropic_costs` |
+| `name`, `enabled` | |
+| `config` (JSONB) | Non-secret settings (bucket, region, prefix, grouping, role ARN, …) |
+| `credentials_encrypted` | Fernet token of the credentials JSON; the key lives only in `CONNECTOR_ENCRYPTION_KEY` |
+| `credentials_hint` | Masked form for display, e.g. `sk-ant-…3456` |
+| `sync_interval_hours` | 0 (manual) to 168 |
+| `lookback_days` | 1 to 365; the window each sync re-reads (CUR uses `config.billing_periods`) |
+| `last_verified_at`, `verified_identity` | Last successful credential check, and who the provider says the key belongs to |
+| `last_sync_status`, `last_sync_started_at`, `last_sync_finished_at`, `last_sync_message` | `running` \| `succeeded` \| `failed`; a `running` sync older than an hour is treated as crashed |
+| `last_import_id` | FK → `billing_imports` (SET NULL) of the last sync that changed data |
+| `created_by_id` | FK → `users` (SET NULL) |
+| `created_at`, `updated_at` | |
 
 ### `billing_records`
 The canonical billing model: one normalized line item per row.

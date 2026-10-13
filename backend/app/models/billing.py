@@ -38,6 +38,7 @@ class ImportStatus(StrEnum):
 class ImportSource(StrEnum):
     UPLOAD = "upload"
     SAMPLE = "sample"
+    CONNECTOR = "connector"
 
 
 class BillingImport(TimestampMixin, Base):
@@ -46,13 +47,15 @@ class BillingImport(TimestampMixin, Base):
     __tablename__ = "billing_imports"
     __table_args__ = (
         CheckConstraint("status IN ('processing', 'completed', 'failed')", name="status_valid"),
-        CheckConstraint("source IN ('upload', 'sample')", name="source_valid"),
-        # The same file content can only be imported successfully once.
+        CheckConstraint("source IN ('upload', 'sample', 'connector')", name="source_valid"),
+        # The same file content can only be imported successfully once. Connector syncs
+        # are exempt: a provider may restate data back to an earlier state, and their
+        # records are reconciled per sync window instead (see ingestion service).
         Index(
             "uq_billing_imports_completed_sha256",
             "file_sha256",
             unique=True,
-            postgresql_where=text("status = 'completed'"),
+            postgresql_where=text("status = 'completed' AND source <> 'connector'"),
         ),
     )
 
@@ -68,6 +71,11 @@ class BillingImport(TimestampMixin, Base):
     rows_inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rows_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rows_invalid: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Connector syncs: stale records of earlier syncs removed from the sync window.
+    rows_replaced: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    connector_id: Mapped[int | None] = mapped_column(
+        ForeignKey("connectors.id", ondelete="SET NULL"), index=True
+    )
 
     # Up to MAX_REPORTED_ERRORS entries of {"line", "column", "message"}.
     errors: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB(none_as_null=True))

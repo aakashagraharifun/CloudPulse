@@ -249,6 +249,7 @@ export function ImportsPage() {
                       <span className="mt-1 flex flex-wrap gap-1">
                         <span className="text-xs text-slate-500">#{item.id} · {formatBytes(item.file_size_bytes)}</span>
                         {item.source === "sample" && <Badge tone="sample">Sample data</Badge>}
+                        {item.source === "connector" && <Badge tone="brand">Connector sync</Badge>}
                       </span>
                     </td>
                     <td className="px-3 py-3">

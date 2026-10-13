@@ -6,6 +6,12 @@ Duplicate protection works at two levels:
 * Record level: every record carries a content fingerprint with a unique
   constraint. Records already present (e.g. overlapping exports) are skipped
   and counted in `rows_duplicate`, never inserted twice.
+
+Connector syncs replace a date window instead: providers restate recent costs
+(estimates become final, a CUR file is re-delivered for the whole month), so
+records of earlier syncs of the same connector inside the window that the new
+data no longer contains are deleted in the same transaction (`rows_replaced`).
+Unchanged records keep their row and count as duplicates.
 """
 
 import hashlib
@@ -16,8 +22,8 @@ from datetime import UTC, date, datetime
 from pathlib import PurePosixPath
 
 from fastapi import status
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import String, all_, delete, func, literal, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -72,6 +78,14 @@ def _summarize_errors(result: NormalizationResult) -> str:
     return summary + " No records were imported; fix the file and upload it again."
 
 
+@dataclass(frozen=True)
+class ReplaceScope:
+    """Connector sync: the inclusive date ranges whose earlier records are reconciled."""
+
+    connector_id: int
+    ranges: tuple[tuple[date, date], ...]
+
+
 def import_billing_file(
     db: Session,
     *,
@@ -80,15 +94,20 @@ def import_billing_file(
     settings: Settings,
     source: ImportSource = ImportSource.UPLOAD,
     today: date | None = None,
+    replace: ReplaceScope | None = None,
+    detected_format: str | None = None,
 ) -> BillingImport:
     """Run the full import. Returns the import (completed or failed); raises on duplicates."""
     sha256 = hashlib.sha256(content).hexdigest()
-    existing = db.scalar(
-        select(BillingImport).where(
-            BillingImport.file_sha256 == sha256,
-            BillingImport.status == ImportStatus.COMPLETED,
+    existing = None
+    if source != ImportSource.CONNECTOR:
+        existing = db.scalar(
+            select(BillingImport).where(
+                BillingImport.file_sha256 == sha256,
+                BillingImport.status == ImportStatus.COMPLETED,
+                BillingImport.source != ImportSource.CONNECTOR,
+            )
         )
-    )
     if existing is not None:
         raise ConflictError(
             f"This file was already imported as import #{existing.id} ({existing.filename}). "
@@ -102,6 +121,7 @@ def import_billing_file(
         file_sha256=sha256,
         file_size_bytes=len(content),
         status=ImportStatus.PROCESSING,
+        connector_id=replace.connector_id if replace else None,
     )
     db.add(billing_import)
     db.commit()
@@ -127,7 +147,7 @@ def import_billing_file(
             db, billing_import, "An unexpected error occurred while reading the file.", None
         )
 
-    billing_import.detected_format = result.detected_format
+    billing_import.detected_format = detected_format or result.detected_format
     billing_import.rows_total = result.rows_total
     if not result.is_valid:
         billing_import.rows_invalid = result.invalid_row_count
@@ -139,6 +159,10 @@ def import_billing_file(
         )
 
     try:
+        if replace is not None:
+            billing_import.rows_replaced = _delete_stale_records(
+                db, billing_import.id, replace, result
+            )
         inserted = _insert_records(db, billing_import.id, result)
         billing_import.rows_inserted = inserted
         billing_import.rows_duplicate = len(result.records) - inserted
@@ -168,6 +192,25 @@ def import_billing_file(
         },
     )
     return billing_import
+
+
+def _delete_stale_records(
+    db: Session, import_id: int, replace: ReplaceScope, result: NormalizationResult
+) -> int:
+    """Delete the connector's earlier records in the window that the new data lacks."""
+    if not replace.ranges:
+        return 0
+    earlier_imports = select(BillingImport.id).where(
+        BillingImport.connector_id == replace.connector_id, BillingImport.id != import_id
+    )
+    fingerprints = [record.fingerprint for record in result.records]
+    statement = delete(BillingRecord).where(
+        BillingRecord.import_id.in_(earlier_imports),
+        or_(*(BillingRecord.usage_date.between(start, end) for start, end in replace.ranges)),
+        # One array parameter, however many records the sync returned.
+        BillingRecord.fingerprint != all_(literal(fingerprints, ARRAY(String(64)))),
+    )
+    return db.execute(statement).rowcount or 0
 
 
 def _insert_records(db: Session, import_id: int, result: NormalizationResult) -> int:

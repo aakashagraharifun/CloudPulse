@@ -15,7 +15,8 @@ class ImportRowError(APIModel):
 class ImportSummary(APIModel):
     id: int
     filename: str
-    source: Literal["upload", "sample"]
+    source: Literal["upload", "sample", "connector"]
+    connector_id: int | None
     status: Literal["processing", "completed", "failed"]
     detected_format: str | None
     file_size_bytes: int
@@ -23,6 +24,7 @@ class ImportSummary(APIModel):
     rows_inserted: int
     rows_duplicate: int
     rows_invalid: int
+    rows_replaced: int
     error_summary: str | None
     currencies: list[str] | None
     date_start: date | None

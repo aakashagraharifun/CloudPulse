@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = False
     smtp_from: str = "cloudpulse@localhost"
 
+    # Live billing connectors (AWS, OpenAI, Anthropic). Credentials are encrypted at
+    # rest with this Fernet key; several comma-separated keys allow rotation (the
+    # first one encrypts, all of them decrypt). Without a key, connectors are disabled.
+    connector_encryption_key: SecretStr | None = None
+    connector_timeout_seconds: float = 30.0
+    # Upper bound for the CUR files downloaded from S3 in one sync.
+    connector_max_download_bytes: int = 2 * 1024 * 1024 * 1024
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:

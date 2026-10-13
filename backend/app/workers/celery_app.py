@@ -36,6 +36,11 @@ celery_app.conf.update(
             "task": "cloudpulse.evaluate_budgets",
             "schedule": crontab(minute=5),
         },
+        # Each connector syncs on its own interval; this only checks which are due.
+        "sync-due-connectors": {
+            "task": "cloudpulse.sync_due_connectors",
+            "schedule": crontab(minute="*/15"),
+        },
         "purge-expired-sessions": {
             "task": "cloudpulse.purge_expired_sessions",
             "schedule": crontab(minute=30, hour=3),

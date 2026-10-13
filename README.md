@@ -79,6 +79,7 @@ open, and built around exports you already have.
 | Area | What it does |
 | --- | --- |
 | **Billing ingestion** | CSV upload with size, encoding, header and per-row validation. Errors are reported by line and column, and nothing is imported if any row is invalid. AWS Cost and Usage Report column names are recognised; identical files are rejected and duplicate records skipped |
+| **Live connectors** | Scheduled pulls from **AWS CUR in S3** (legacy CUR and CUR 2.0, CSV/GZIP), **AWS Cost Explorer**, the **OpenAI Costs API** and the **Anthropic Usage & Cost Admin API**. Credentials are encrypted at rest (Fernet) and write-only, a read-only verify step checks them before saving, and each sync re-reads a window and reconciles restated days instead of double-counting |
 | **Every provider** | AWS, Google Cloud, Microsoft Azure, Oracle, Alibaba, DigitalOcean, Cloudflare, OpenAI, Anthropic, Google Gemini, Mistral, DeepSeek, Hugging Face, Datadog, Snowflake, Databricks, MongoDB Atlas and any other provider that exports CSV. Names like "Microsoft Azure" are normalized and grouped into **cloud**, **AI** and **SaaS** |
 | **AI and LLM spend** | An optional `model` column with token counts as usage: group and filter by model (`gpt-4o`, `claude-sonnet-4-5`), budget an AI category, and investigate token spikes like any other incident |
 | **Cost analytics** | Totals, daily, weekly and monthly series, breakdowns by any dimension compared with the previous period, and a month-end forecast from the trailing 7-day median |
@@ -88,7 +89,7 @@ open, and built around exports you already have.
 | **Incidents** | Consecutive anomalous days become one incident; acknowledge, add notes, resolve and reopen, with a full timeline. Re-running detection never duplicates an incident |
 | **Budgets and alerts** | Monthly, quarterly or yearly budgets for all spend or one scope, with utilization and projection. Alerts go out by e-mail or webhook (Slack-compatible), once per threshold per period, and every delivery is logged and retried |
 | **Security** | Sign-in with first-run admin setup, three roles, scrypt-hashed passwords, revocable sessions, lockout after failed logins, an audit log and request IDs on every response |
-| **Dashboard** | Landing page, overview, cost explorer, incidents, investigation, budgets, imports and settings, with loading, empty, error and success states, down to 360 px wide |
+| **Dashboard** | Landing page, overview, cost explorer, incidents, investigation, budgets, imports, connectors (with an animated, GSAP-driven authorization preview) and settings, with loading, empty, error and success states, down to 360 px wide |
 
 ## Stack
 
@@ -197,6 +198,8 @@ Copy `.env.example` to `.env` (git-ignored). Only `POSTGRES_PASSWORD` is require
 | `CORS_ORIGINS` | `["http://localhost:3000","http://127.0.0.1:3000"]` | Browser origins allowed to call the API |
 | `MAX_UPLOAD_BYTES` | `20971520` (20 MB) | Upload limit |
 | `SMTP_HOST` · `SMTP_PORT` · `SMTP_FROM` | `127.0.0.1` · `1025` · `cloudpulse@localhost` | Alert e-mail (Mailpit locally) |
+| `CONNECTOR_ENCRYPTION_KEY` | *(unset: connectors disabled)* | Fernet key that encrypts connector credentials; comma-separate keys to rotate (the first encrypts) |
+| `CONNECTOR_TIMEOUT_SECONDS` · `CONNECTOR_MAX_DOWNLOAD_BYTES` | `30` · 2 GiB | Provider request timeout · cap on CUR files read per sync |
 | `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | API origin for the dashboard (`frontend/.env.local` when running locally) |
 
 ### Scripts
@@ -250,6 +253,7 @@ docker-compose.yml         postgres, redis, mailpit; api, worker, beat, frontend
 | `/dashboard/incidents` · `/dashboard/incidents/[id]` | Incident list · investigation, evidence and response workflow |
 | `/dashboard/budgets` | Budgets, utilization, projections and threshold alerts |
 | `/dashboard/imports` | CSV upload with validation, sample data, import history, canonical format |
+| `/dashboard/connectors` | Live connectors: animated Claude authorization preview (mock), then connect, verify, sync and schedule AWS CUR, Cost Explorer, OpenAI and Anthropic |
 | `/dashboard/settings` | Account, detection thresholds, notification channels, allocation rules, users, audit log |
 
 **API** · http://127.0.0.1:8000/api/v1 (full reference in [docs/api.md](docs/api.md))
@@ -260,6 +264,7 @@ docker-compose.yml         postgres, redis, mailpit; api, worker, beat, frontend
 | Auth | `GET /auth/status` · `POST /auth/setup` · `POST /auth/login` · `GET /auth/me` · `POST /auth/logout` · `POST /auth/change-password` |
 | Users and audit | `GET/POST /users` · `PATCH /users/{id}` · `POST /users/{id}/reset-password` · `GET /audit-events` |
 | Imports | `POST /imports` · `POST /imports/sample` · `GET /imports` · `GET/DELETE /imports/{id}` · `GET /imports/schema` · `GET /imports/template.csv` |
+| Connectors | `GET /connectors/catalog` · `GET/POST /connectors` · `POST /connectors/verify` · `GET/PUT/DELETE /connectors/{id}` · `POST /connectors/{id}/test` · `POST /connectors/{id}/sync` |
 | Costs | `GET /costs/data-status` · `/costs/summary` · `/costs/timeseries` · `/costs/breakdown` · `/costs/forecast` |
 | Allocation | `GET/POST /allocation-rules` · `PUT/DELETE /allocation-rules/{id}` |
 | Detection | `GET/PUT /anomalies/settings` · `GET/POST /anomalies/runs` |
@@ -347,7 +352,7 @@ of values next to it. Read [docs/design.md](docs/design.md) before any UI work.
 
 - **Single workspace.** All users share one set of billing data; separate organizations (multi-tenancy) are not implemented.
 - **Built for local use.** Services bind to `127.0.0.1` and there is no HTTPS. A network deployment would need TLS, a hardened CORS list and rate limiting at a reverse proxy.
-- **Exports, not live connectors.** Costs arrive as CSV files. Pulling from AWS Cost Explorer, the OpenAI or Anthropic usage APIs needs real credentials and is a future step.
+- **Connectors are tested against mocked provider APIs.** The AWS SigV4 signer matches the AWS documentation's test vector, and the Anthropic key check was run against the live API (a fake key is rejected with 401), but no sync has run against a real AWS account or OpenAI/Anthropic organization yet. CUR files must be CSV (GZIP); Parquet is not read. AWS credentials are access keys (optionally assuming a role); instance profiles and SSO are not supported. Anthropic's cost report excludes Priority Tier costs.
 - **No currency conversion.** Each currency is analysed separately.
 - **Increases only.** Detection flags cost increases; days already recorded as anomalous are not withdrawn if the data later changes.
 - Ingestion runs synchronously in the upload request (about 7 s to validate 150,000 rows); very large exports should be split.
@@ -358,8 +363,7 @@ See [docs/anomaly-detection.md](docs/anomaly-detection.md#limitations) for detec
 
 | When | Milestone |
 | --- | --- |
-| **Built** | Ingestion, multi-provider and AI cost model, analytics, allocation, detection, investigation, incidents, budgets, alerts, auth and RBAC, audit log, CI |
-| **Next** | Live connectors: AWS CUR from S3, Cost Explorer API, OpenAI and Anthropic usage APIs (bring your own keys) |
+| **Built** | Ingestion, multi-provider and AI cost model, analytics, allocation, detection, investigation, incidents, budgets, alerts, auth and RBAC, audit log, CI, live connectors (AWS CUR, Cost Explorer, OpenAI, Anthropic) |
 | **Next** | Unit economics: cost per customer, feature or 1,000 requests from tagged spend |
 | **Later** | Multi-tenant workspaces, SSO, cookie sessions behind HTTPS |
 | **Later** | Commitment insights: savings plans and reserved capacity coverage from billing data |

@@ -13,6 +13,11 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from cryptography.fernet import Fernet
+
+# Connector tests store encrypted credentials; use a throwaway key for the test run.
+os.environ.setdefault("CONNECTOR_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient

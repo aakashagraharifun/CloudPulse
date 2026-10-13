@@ -105,6 +105,30 @@ If validation fails, the API returns `422 import_validation_failed`, and `error.
 
 Uploading a file identical to a completed import returns `409`: `"This file was already imported as import #1 (…). No records were added."`
 
+## Connectors
+
+Live billing connectors pull costs from provider APIs into the same pipeline as CSV uploads. Credentials are **write-only**: they are encrypted with `CONNECTOR_ENCRYPTION_KEY` (Fernet) and only a masked `credentials_hint` is ever returned. Reads need any role, syncing needs `member`, everything else needs `admin`.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/connectors/catalog` | Connector kinds with their form fields, required permissions, and whether encryption is configured |
+| GET | `/connectors` · `/connectors/{id}` | Connectors with schedule, last sync status and message, and verified identity |
+| POST | `/connectors/verify` | Check unsaved credentials `{kind, config, credentials}`; returns `{ok, identity, steps[]}`. Nothing is stored |
+| POST | `/connectors` | Create `{kind, name, config, credentials, enabled, sync_interval_hours (0 = manual, max 168), lookback_days (1-365)}` |
+| PUT | `/connectors/{id}` | Update; omit `credentials` (or send `null`) to keep the stored ones |
+| DELETE | `/connectors/{id}` | Delete the connector and its credentials. Imported billing data is kept |
+| POST | `/connectors/{id}/test` | Verify the stored credentials against the provider |
+| POST | `/connectors/{id}/sync` | Pull now. Returns `{status: succeeded\|failed, message, changed, import_id, connector}`; **409** if a sync is already running |
+
+| Kind | Source | Credentials | Each sync reads |
+| --- | --- | --- | --- |
+| `aws_cur_s3` | CUR files in S3 (legacy CUR or CUR 2.0, CSV/GZIP), newest manifest per billing period | IAM access key, optional `role_arn` + `external_id` | The newest `billing_periods` months, aggregated from hourly line items to daily rows |
+| `aws_cost_explorer` | `ce:GetCostAndUsage`, daily, grouped by service plus `group_by` (account, region, usage type or a tag) | IAM access key, optional role | The last `lookback_days` days (AWS bills USD 0.01 per request) |
+| `openai_costs` | `GET /v1/organization/costs` grouped by line item and project | Admin key `sk-admin-…` | The last `lookback_days` days; project IDs resolved to names |
+| `anthropic_costs` | `GET /v1/organizations/cost_report` grouped by workspace and description | Admin API key `sk-ant-admin…` | The last `lookback_days` days; cents converted to dollars, workspaces resolved to names |
+
+A sync writes a canonical CSV and imports it with `source = "connector"`. Inside the synced window, records of earlier syncs of the same connector that the provider no longer reports are deleted (`rows_replaced`), unchanged records are kept (`rows_duplicate`), and new or restated ones are inserted, so estimates that later become final are never double-counted. A sync that changes nothing leaves no import behind. Celery beat checks every 15 minutes which enabled connectors are due.
+
 ## Costs
 
 Common query parameters: `currency`, `start`, `end` (inclusive; defaults to the 30 days ending on the latest day with data), plus exact-match filters `provider`, `account_id`, `service`, `region`, `resource_id`, `usage_type`, `model`, `project` and `environment`, and `category` (`cloud`, `ai`, `saas` or `other`, derived from the provider). Pass the value `(unassigned)` to select records where a dimension is missing.

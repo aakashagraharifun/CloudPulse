@@ -13,6 +13,7 @@ from app.api.v1 import (
     anomalies,
     auth,
     budgets,
+    connectors,
     costs,
     health,
     imports,
@@ -32,6 +33,7 @@ api_router.include_router(imports.public_router)
 signed_in = [Depends(get_current_user)]
 for module in (
     imports,
+    connectors,
     costs,
     allocation_rules,
     anomalies,

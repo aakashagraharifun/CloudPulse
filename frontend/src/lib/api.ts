@@ -175,7 +175,8 @@ export type ImportRowError = { line: number | null; column: string | null; messa
 export type ImportSummary = {
   id: number;
   filename: string;
-  source: "upload" | "sample";
+  source: "upload" | "sample" | "connector";
+  connector_id: number | null;
   status: "processing" | "completed" | "failed";
   detected_format: string | null;
   file_size_bytes: number;
@@ -183,6 +184,7 @@ export type ImportSummary = {
   rows_inserted: number;
   rows_duplicate: number;
   rows_invalid: number;
+  rows_replaced: number;
   error_summary: string | null;
   currencies: string[] | null;
   date_start: string | null;
@@ -566,4 +568,84 @@ export type Delivery = {
   created_at: string;
   last_attempt_at: string | null;
   sent_at: string | null;
+};
+
+// --- live billing connectors -------------------------------------------------
+
+export type ConnectorKind = "aws_cur_s3" | "aws_cost_explorer" | "openai_costs" | "anthropic_costs";
+
+export type CatalogField = {
+  key: string;
+  label: string;
+  type: "text" | "secret" | "select" | "number" | "toggle";
+  required: boolean;
+  /** Stored encrypted with the credentials and never returned by the API. */
+  secret: boolean;
+  help: string;
+  placeholder: string;
+  default: string | number | boolean | null;
+  options: { value: string; label: string }[];
+  show_if: { key: string; value: string } | null;
+};
+
+export type CatalogEntry = {
+  kind: ConnectorKind;
+  provider: string;
+  name: string;
+  tagline: string;
+  auth: string;
+  docs_url: string;
+  permissions: string[];
+  notes: string[];
+  supports_lookback: boolean;
+  fields: CatalogField[];
+};
+
+export type ConnectorCatalog = { encryption_configured: boolean; kinds: CatalogEntry[] };
+
+export type Connector = {
+  id: number;
+  kind: ConnectorKind;
+  provider: string;
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  credentials_hint: string;
+  sync_interval_hours: number;
+  lookback_days: number;
+  last_verified_at: string | null;
+  verified_identity: string | null;
+  last_sync_status: "running" | "succeeded" | "failed" | null;
+  last_sync_started_at: string | null;
+  last_sync_finished_at: string | null;
+  last_sync_message: string | null;
+  last_import_id: number | null;
+  next_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConnectorSettingsInput = {
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  sync_interval_hours: number;
+  lookback_days: number;
+};
+
+export type VerifyStep = {
+  key: string;
+  label: string;
+  status: "ok" | "failed" | "skipped";
+  detail: string;
+};
+
+export type VerifyResponse = { ok: boolean; identity: string | null; steps: VerifyStep[] };
+
+export type SyncResponse = {
+  connector: Connector;
+  status: "succeeded" | "failed";
+  message: string;
+  changed: boolean;
+  import_id: number | null;
 };

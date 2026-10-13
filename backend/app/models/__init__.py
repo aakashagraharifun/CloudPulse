@@ -14,6 +14,7 @@ from app.models.anomaly import (
 from app.models.auth import ROLE_RANK, AuditEvent, User, UserRole, UserSession
 from app.models.billing import BillingImport, BillingRecord, ImportSource, ImportStatus
 from app.models.budget import Budget, BudgetAlert, NotificationChannel, NotificationDelivery
+from app.models.connector import Connector, ConnectorKind, SyncStatus
 
 __all__ = [
     "AllocationRule",
@@ -25,6 +26,8 @@ __all__ = [
     "BillingRecord",
     "Budget",
     "BudgetAlert",
+    "Connector",
+    "ConnectorKind",
     "DetectionRun",
     "DetectionSettings",
     "ImportSource",
@@ -37,6 +40,7 @@ __all__ = [
     "NotificationChannel",
     "NotificationDelivery",
     "Severity",
+    "SyncStatus",
     "User",
     "UserRole",
     "UserSession",

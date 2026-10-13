@@ -16,6 +16,11 @@ export const NAV_ITEMS = [
   { href: "/dashboard/budgets", label: "Budgets", icon: "M12 3v18m4-14H10a3 3 0 000 6h4a3 3 0 010 6H7" },
   { href: "/dashboard/imports", label: "Imports", icon: "M12 15V3m0 12l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" },
   {
+    href: "/dashboard/connectors",
+    label: "Connectors",
+    icon: "M12 22v-5M9 8V2m6 6V2m3 6v5a4 4 0 01-4 4h-4a4 4 0 01-4-4V8z",
+  },
+  {
     href: "/dashboard/settings",
     label: "Settings",
     icon: "M10.3 4.3a1.7 1.7 0 013.4 0 1.7 1.7 0 002.6 1.1 1.7 1.7 0 012.4 2.4 1.7 1.7 0 001.1 2.6 1.7 1.7 0 010 3.4 1.7 1.7 0 00-1.1 2.6 1.7 1.7 0 01-2.4 2.4 1.7 1.7 0 00-2.6 1.1 1.7 1.7 0 01-3.4 0 1.7 1.7 0 00-2.6-1.1 1.7 1.7 0 01-2.4-2.4 1.7 1.7 0 00-1.1-2.6 1.7 1.7 0 010-3.4 1.7 1.7 0 001.1-2.6 1.7 1.7 0 012.4-2.4 1.7 1.7 0 002.6-1.1zM12 15a3 3 0 100-6 3 3 0 000 6z",

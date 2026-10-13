@@ -56,6 +56,13 @@ The detection engine (`anomaly_detection/engine.py`) is a pure function with no 
 6. Otherwise each record gets a content fingerprint. Records are inserted in chunks with `ON CONFLICT (fingerprint) DO NOTHING`, so already-stored records are counted as duplicates. Allocation rules fill missing project/environment tags. The import becomes `completed`, all in one transaction.
 7. `pipeline.run_post_import_evaluation` runs anomaly detection and budget evaluation, then sends notifications. Failures here are logged and never undo the import.
 
+### 1b. Live connector sync
+
+1. `POST /connectors/{id}/sync` (or the `cloudpulse.sync_due_connectors` beat task every 15 minutes) marks the connector `running`; a concurrent sync gets **409**.
+2. The connector decrypts its credentials and fetches the window from the provider (`services/connectors/`: SigV4-signed AWS calls and the OpenAI and Anthropic admin APIs over httpx, with retries on 429/5xx). Money is parsed as `Decimal`, never float.
+3. The rows are written as a canonical CSV and imported through the same path as an upload, with a `ReplaceScope`: in the same transaction, the connector's earlier records in the window that the new data no longer contains are deleted, so restated days converge instead of double-counting.
+4. If anything changed, post-import evaluation runs (detection, budgets, notifications). A no-op sync leaves no import row.
+
 ### 2. Analytics
 
 Every analytics query is scoped to one currency and aggregates in SQL (`SUM` over `NUMERIC`). "As of" is the latest day with data for that currency, so historical or sample data behaves like live data. Days with no records at all are *missing* (`null`). Days that have data but nothing matching a filter are a real zero.
@@ -136,5 +143,6 @@ Incident actions are recorded in each incident's own timeline (`incident_events`
 - Secrets live in `.env`, which is git-ignored. `.env.example` holds placeholders. CI fails if any `.env` file is ever committed.
 - Uploads: `.csv` only, size-limited before and after reading, never written to disk, and the filename is used only as a display label.
 - Webhook URLs are masked in API responses because they often embed tokens.
+- Connector credentials are encrypted at rest with Fernet (`CONNECTOR_ENCRYPTION_KEY`, rotatable), never returned by the API, and only sent to fixed provider hosts (bucket and region names are validated, so they cannot point requests elsewhere). Connectors only call read-only billing and identity endpoints.
 - Ports are bound to `127.0.0.1`. Containers run as non-root users.
 - Not yet: TLS, HttpOnly cookie sessions, rate limiting beyond login lockout, multi-tenancy (see the README's known limitations).

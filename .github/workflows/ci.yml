@@ -130,6 +130,8 @@ jobs:
         run: |
           pip install -r requirements.txt
           alembic upgrade head
+          # A throwaway key so the connector e2e test can store (fake) credentials.
+          export CONNECTOR_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../api.log 2>&1 &
 
       - name: Build and start the frontend

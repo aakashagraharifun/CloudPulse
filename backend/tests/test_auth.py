@@ -46,6 +46,11 @@ ADMIN_ONLY = {
     ("PATCH", "/api/v1/users/{user_id}"),
     ("POST", "/api/v1/users/{user_id}/reset-password"),
     ("GET", "/api/v1/audit-events"),
+    ("POST", "/api/v1/connectors"),
+    ("POST", "/api/v1/connectors/verify"),
+    ("PUT", "/api/v1/connectors/{connector_id}"),
+    ("DELETE", "/api/v1/connectors/{connector_id}"),
+    ("POST", "/api/v1/connectors/{connector_id}/test"),
 }
 
 
