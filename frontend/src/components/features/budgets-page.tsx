@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
+import { HoldToDeleteButton } from "@/components/ui/hold-to-delete";
 import {
   Badge,
   Button,
@@ -97,7 +98,6 @@ export function BudgetsPage() {
   }
 
   async function remove(status: BudgetStatus) {
-    if (!window.confirm(`Delete the budget "${status.budget.name}" and its alert history?`)) return;
     try {
       await api.delete(`/budgets/${status.budget.id}`);
       setNotice({ tone: "success", text: `Deleted "${status.budget.name}".` });
@@ -293,9 +293,11 @@ function BudgetCard({
           <Button variant="secondary" size="sm" onClick={onEdit}>
             Edit
           </Button>
-          <Button variant="danger" size="sm" onClick={onDelete}>
-            Delete
-          </Button>
+          <HoldToDeleteButton
+            onConfirm={onDelete}
+            label={`budget "${status.budget.name}"`}
+            consequence="The budget and its alert history are deleted."
+          />
         </div>
       )}
     </Card>

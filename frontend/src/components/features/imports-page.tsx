@@ -6,6 +6,7 @@ import { useRef, useState, type DragEvent, type FormEvent } from "react";
 import { LoadSampleButton } from "@/components/features/load-sample-button";
 import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
+import { HoldToDeleteButton } from "@/components/ui/hold-to-delete";
 import {
   Badge,
   Button,
@@ -115,8 +116,6 @@ export function ImportsPage() {
   }
 
   async function remove(item: ImportSummary) {
-    const what = item.status === "completed" ? ` and its ${item.rows_inserted.toLocaleString()} billing records` : "";
-    if (!window.confirm(`Delete import #${item.id} (${item.filename})${what}? Analytics will no longer include this data.`)) return;
     try {
       await api.delete(`/imports/${item.id}`);
       imports.reload();
@@ -270,9 +269,15 @@ export function ImportsPage() {
                     <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatDateTime(item.created_at)}</td>
                     <td className="px-5 py-3 text-right">
                       {can("admin") && item.status !== "processing" && (
-                        <Button variant="danger" size="sm" onClick={() => remove(item)}>
-                          Delete
-                        </Button>
+                        <HoldToDeleteButton
+                          onConfirm={() => remove(item)}
+                          label={`import #${item.id} (${item.filename})`}
+                          consequence={
+                            item.rows_inserted > 0
+                              ? `Its ${item.rows_inserted.toLocaleString()} billing records are deleted; analytics will no longer include them.`
+                              : "The import record is deleted. It added no billing records."
+                          }
+                        />
                       )}
                     </td>
                   </tr>

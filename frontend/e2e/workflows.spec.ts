@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN, adminApi, unique } from "./helpers";
+import { ADMIN, adminApi, holdButton, unique } from "./helpers";
 
 type IncidentPage = { items: { id: number; scope_value: string }[] };
 
@@ -43,8 +43,14 @@ test("a budget is created, checked and deleted", async ({ page }) => {
   await page.getByRole("button", { name: "Check budgets now" }).click();
   await expect(page.getByText("Budgets checked")).toBeVisible();
 
-  page.once("dialog", (dialog) => dialog.accept());
   const card = page.locator("section").filter({ has: page.getByRole("heading", { name }) });
-  await card.getByRole("button", { name: "Delete" }).click();
+  const remove = card.getByRole("button", { name: /Hold for 3 seconds to delete budget/ });
+  await expect(remove).toContainText("Hold to delete");
+  // Letting go early deletes nothing.
+  await holdButton(page, remove, 1000);
+  await expect(remove).toContainText("Hold to delete");
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+  // Holding the full three seconds deletes.
+  await holdButton(page, remove);
   await expect(page.getByText(`Deleted "${name}"`)).toBeVisible();
 });

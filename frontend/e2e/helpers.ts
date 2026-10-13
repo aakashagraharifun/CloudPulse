@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { request, type APIRequestContext, type Page } from "@playwright/test";
+import { request, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 export const API_URL = (process.env.E2E_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -49,4 +49,12 @@ export async function signIn(page: Page, email: string, password: string, stay =
 
 export function unique(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Press a "Hold to delete" button for `ms` (3 s or more deletes), then release. */
+export async function holdButton(page: Page, button: Locator, ms = 3400) {
+  await button.hover();
+  await page.mouse.down();
+  await page.waitForTimeout(ms);
+  await page.mouse.up();
 }

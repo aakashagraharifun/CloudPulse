@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { useAuth } from "@/components/shell/auth";
 import { useDataStatus } from "@/components/shell/data-status";
+import { HoldToDeleteButton } from "@/components/ui/hold-to-delete";
 import {
   Badge,
   Button,
@@ -149,7 +150,6 @@ function DeleteRuleButton({
 }) {
   const [busy, setBusy] = useState(false);
   async function remove() {
-    if (!window.confirm(`Delete the rule "${rule.name}"? Records it attributed will be re-evaluated.`)) return;
     setBusy(true);
     try {
       // DELETE returns the mutation summary (records re-attributed), so read the body.
@@ -162,9 +162,12 @@ function DeleteRuleButton({
     }
   }
   return (
-    <Button variant="danger" size="sm" disabled={busy} onClick={remove}>
-      Delete
-    </Button>
+    <HoldToDeleteButton
+      onConfirm={remove}
+      disabled={busy}
+      label={`rule "${rule.name}"`}
+      consequence="Records it attributed are re-evaluated."
+    />
   );
 }
 

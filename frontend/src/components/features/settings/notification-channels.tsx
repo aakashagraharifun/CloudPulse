@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { useAuth } from "@/components/shell/auth";
+import { HoldToDeleteButton } from "@/components/ui/hold-to-delete";
 import {
   Badge,
   Button,
@@ -66,7 +67,6 @@ export function NotificationChannels() {
   }
 
   async function remove(channel: Channel) {
-    if (!window.confirm(`Delete the channel "${channel.name}"? Its delivery history is kept.`)) return;
     try {
       await api.delete(`/notifications/channels/${channel.id}`);
       reload();
@@ -133,9 +133,11 @@ export function NotificationChannels() {
                 <Button variant="ghost" size="sm" disabled={busyId === channel.id} onClick={() => toggle(channel)}>
                   {channel.enabled ? "Disable" : "Enable"}
                 </Button>
-                <Button variant="danger" size="sm" onClick={() => remove(channel)}>
-                  Delete
-                </Button>
+                <HoldToDeleteButton
+                  onConfirm={() => remove(channel)}
+                  label={`channel "${channel.name}"`}
+                  consequence="Its delivery history is kept."
+                />
               </div>
               )}
             </li>

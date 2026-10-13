@@ -8,6 +8,7 @@ import { AnthropicPreview } from "@/components/features/connectors/anthropic-pre
 import { ConnectorForm } from "@/components/features/connectors/connector-form";
 import { ProviderMark, StepList } from "@/components/features/connectors/flow-stage";
 import { useAuth } from "@/components/shell/auth";
+import { HoldToDeleteButton } from "@/components/ui/hold-to-delete";
 import {
   Badge,
   Button,
@@ -132,12 +133,6 @@ export function ConnectorsPage() {
   }
 
   async function remove(connector: Connector) {
-    if (
-      !window.confirm(
-        `Delete "${connector.name}"? Its stored credentials are destroyed. Billing data it already imported is kept (delete those imports on the Imports page).`,
-      )
-    )
-      return;
     try {
       await api.delete(`/connectors/${connector.id}`);
       setMessage({ tone: "success", text: `Deleted "${connector.name}".` });
@@ -283,9 +278,12 @@ export function ConnectorsPage() {
                             <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => toggle(connector)}>
                               {connector.enabled ? "Disable" : "Enable"}
                             </Button>
-                            <Button variant="danger" size="sm" disabled={busy !== null} onClick={() => remove(connector)}>
-                              Delete
-                            </Button>
+                            <HoldToDeleteButton
+                              onConfirm={() => remove(connector)}
+                              disabled={busy !== null}
+                              label={`connector "${connector.name}"`}
+                              consequence="Its stored credentials are destroyed. Billing data it already imported is kept."
+                            />
                           </>
                         )}
                       </div>

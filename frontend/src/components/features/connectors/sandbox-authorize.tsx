@@ -5,7 +5,7 @@ import gsap from "gsap";
 import { MotionPathPlugin } from "gsap/MotionPathPlugin";
 import { CheckIcon, FlaskConicalIcon, XIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 
 import { Logo } from "@/components/brand/logo";
 import { FlowStage, PROVIDER_LABEL } from "@/components/features/connectors/flow-stage";
@@ -20,6 +20,8 @@ import {
 } from "@/lib/api";
 
 gsap.registerPlugin(useGSAP, MotionPathPlugin);
+
+const noSubscription = () => () => {};
 
 const KINDS: Record<ConnectorKind, { provider: string; name: string; account: string; grants: string[] }> = {
   anthropic_costs: {
@@ -65,8 +67,10 @@ export function SandboxAuthorize() {
   const [phase, setPhase] = useState<Phase>("consent");
   const [identity, setIdentity] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasOpener] = useState(() => typeof window !== "undefined" && Boolean(window.opener));
-  const signedIn = typeof window !== "undefined" && Boolean(authToken.get());
+  // Browser-only facts, read via useSyncExternalStore so the server render (which
+  // can't know them) and hydration agree; they settle right after hydration.
+  const signedIn = useSyncExternalStore(authToken.subscribe, () => authToken.get() !== null, () => null);
+  const hasOpener = useSyncExternalStore(noSubscription, () => Boolean(window.opener), () => false);
 
   useGSAP(
     () => {
@@ -217,7 +221,7 @@ export function SandboxAuthorize() {
                   contacted, and sandbox syncs never import billing data.
                 </p>
               </div>
-              {!signedIn && (
+              {signedIn === false && (
                 <div className="mt-4">
                   <Notice tone="warning">Sign in to CloudPulse in this browser first, then try again.</Notice>
                 </div>
