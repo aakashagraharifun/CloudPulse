@@ -31,10 +31,13 @@ export function VerifyFlow({
   provider,
   phase,
   result,
+  sandbox = false,
 }: {
   provider: string;
   phase: "idle" | "verifying" | "done";
   result: VerifyResponse | null;
+  /** A simulated account: shown with sandbox wording. */
+  sandbox?: boolean;
 }) {
   const scope = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(0);
@@ -133,7 +136,9 @@ export function VerifyFlow({
 
   const labels = result
     ? result.steps.map((s) => s.label)
-    : (PLACEHOLDER_STEPS[provider] ?? PLACEHOLDER_STEPS.aws);
+    : sandbox
+      ? ["Authorize the sandbox account", "Read billing data"]
+      : (PLACEHOLDER_STEPS[provider] ?? PLACEHOLDER_STEPS.aws);
   const steps = labels.map((title, index) => {
     const reported = result?.steps[index];
     let state: StepState = "pending";
@@ -151,14 +156,19 @@ export function VerifyFlow({
     <div ref={scope} className="space-y-4">
       <FlowStage
         provider={provider}
-        remoteCaption={REMOTE_CAPTION[provider] ?? ""}
+        remoteCaption={sandbox ? "Sandbox" : (REMOTE_CAPTION[provider] ?? "")}
         identity={result?.identity}
       />
       <StepList steps={steps} />
       {phase === "idle" && (
         <p className="text-xs text-slate-500">
-          Verifying makes read-only requests with the credentials you entered. Nothing is stored until you save.
+          {sandbox
+            ? "Verifying opens a mock authorization window for a simulated account. No provider is contacted."
+            : "Verifying makes read-only requests with the credentials you entered. Nothing is stored until you save."}
         </p>
+      )}
+      {phase === "verifying" && sandbox && (
+        <p className="text-xs text-slate-500">Waiting for you to authorize in the pop-up window…</p>
       )}
     </div>
   );

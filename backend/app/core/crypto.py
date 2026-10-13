@@ -26,7 +26,7 @@ class EncryptionUnavailable(AppError):
         )
 
 
-def _cipher(settings: Settings) -> MultiFernet:
+def cipher(settings: Settings) -> MultiFernet:
     if settings.connector_encryption_key is None:
         raise EncryptionUnavailable(
             "Connectors are disabled: set CONNECTOR_ENCRYPTION_KEY so credentials can be "
@@ -44,19 +44,19 @@ def _cipher(settings: Settings) -> MultiFernet:
 
 def encryption_configured(settings: Settings) -> bool:
     try:
-        _cipher(settings)
+        cipher(settings)
     except EncryptionUnavailable:
         return False
     return True
 
 
 def encrypt_json(settings: Settings, value: dict[str, Any]) -> str:
-    return _cipher(settings).encrypt(json.dumps(value).encode("utf-8")).decode("ascii")
+    return cipher(settings).encrypt(json.dumps(value).encode("utf-8")).decode("ascii")
 
 
 def decrypt_json(settings: Settings, token: str) -> dict[str, Any]:
     try:
-        return json.loads(_cipher(settings).decrypt(token.encode("ascii")))
+        return json.loads(cipher(settings).decrypt(token.encode("ascii")))
     except InvalidToken as exc:
         raise EncryptionUnavailable(
             "Stored credentials cannot be decrypted with the configured "

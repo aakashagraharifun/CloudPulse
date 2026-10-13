@@ -228,8 +228,9 @@ export function FlowStage({
 
         <span
           data-flow="identity"
-          className="absolute hidden max-w-[40%] -translate-x-1/2 truncate sm:block whitespace-nowrap rounded-full bg-good/20 px-2.5 py-0.5 text-[9px] font-medium text-green-200 opacity-0 ring-1 ring-inset ring-green-400/30 sm:text-[11px]"
-          style={{ left: pct(REMOTE_X + NODE.w / 2, VIEW_W), top: pct(NODE.y + NODE.h + 12, VIEW_H) }}
+          className="absolute hidden max-w-[48%] truncate whitespace-nowrap rounded-full bg-good/20 px-2.5 py-0.5 text-[9px] font-medium text-green-200 opacity-0 ring-1 ring-inset ring-green-400/30 sm:block sm:text-[11px]"
+          // Right-aligned with the provider node so long names never run off the panel.
+          style={{ right: pct(VIEW_W - REMOTE_X - NODE.w, VIEW_W), top: pct(NODE.y + NODE.h + 12, VIEW_H) }}
         >
           {identity ?? ""}
         </span>

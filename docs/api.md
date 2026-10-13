@@ -113,6 +113,7 @@ Live billing connectors pull costs from provider APIs into the same pipeline as 
 | --- | --- | --- |
 | GET | `/connectors/catalog` | Connector kinds with their form fields, required permissions, and whether encryption is configured |
 | GET | `/connectors` · `/connectors/{id}` | Connectors with schedule, last sync status and message, and verified identity |
+| POST | `/connectors/sandbox/authorize` | Mock consent for a **simulated** account `{kind}`; returns `{token, identity, expires_in_seconds}` (a 15-minute `cpsbx_…` token to save as `credentials: {sandbox_token}`) |
 | POST | `/connectors/verify` | Check unsaved credentials `{kind, config, credentials}`; returns `{ok, identity, steps[]}`. Nothing is stored |
 | POST | `/connectors` | Create `{kind, name, config, credentials, enabled, sync_interval_hours (0 = manual, max 168), lookback_days (1-365)}` |
 | PUT | `/connectors/{id}` | Update; omit `credentials` (or send `null`) to keep the stored ones |
@@ -126,6 +127,8 @@ Live billing connectors pull costs from provider APIs into the same pipeline as 
 | `aws_cost_explorer` | `ce:GetCostAndUsage`, daily, grouped by service plus `group_by` (account, region, usage type or a tag) | IAM access key, optional role | The last `lookback_days` days (AWS bills USD 0.01 per request) |
 | `openai_costs` | `GET /v1/organization/costs` grouped by line item and project | Admin key `sk-admin-…` | The last `lookback_days` days; project IDs resolved to names |
 | `anthropic_costs` | `GET /v1/organizations/cost_report` grouped by workspace and description | Admin API key `sk-ant-admin…` | The last `lookback_days` days; cents converted to dollars, workspaces resolved to names |
+
+**Sandbox connectors** (`sandbox: true`) let you try the whole flow without a provider account: the dashboard's *Verify credentials* opens a CloudPulse-branded mock authorization window (`/connect/authorize`), which issues a sandbox token and posts it back to the form. Their syncs fetch deterministic simulated data and validate it like a real import, but **never write billing data**. `python -m scripts.seed_sandbox_connectors` adds a Claude and an AWS Cost Explorer sandbox connector.
 
 A sync writes a canonical CSV and imports it with `source = "connector"`. Inside the synced window, records of earlier syncs of the same connector that the provider no longer reports are deleted (`rows_replaced`), unchanged records are kept (`rows_duplicate`), and new or restated ones are inserted, so estimates that later become final are never double-counted. A sync that changes nothing leaves no import behind. Celery beat checks every 15 minutes which enabled connectors are due.
 

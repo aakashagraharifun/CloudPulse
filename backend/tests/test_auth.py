@@ -48,6 +48,7 @@ ADMIN_ONLY = {
     ("GET", "/api/v1/audit-events"),
     ("POST", "/api/v1/connectors"),
     ("POST", "/api/v1/connectors/verify"),
+    ("POST", "/api/v1/connectors/sandbox/authorize"),
     ("PUT", "/api/v1/connectors/{connector_id}"),
     ("DELETE", "/api/v1/connectors/{connector_id}"),
     ("POST", "/api/v1/connectors/{connector_id}/test"),

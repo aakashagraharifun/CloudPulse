@@ -213,7 +213,7 @@ export function ConnectorsPage() {
               title="No connectors yet"
               description={
                 admin
-                  ? "Connect a source below. Verify the credentials first: the check is read-only and stores nothing."
+                  ? "Connect a source below. No account? Choose “Sandbox account” to try the full flow with a simulated provider."
                   : "An admin can connect AWS, OpenAI or Anthropic billing here."
               }
             />
@@ -234,6 +234,7 @@ export function ConnectorsPage() {
                             {connector.name}
                             <SyncBadge connector={connector} />
                             {!connector.enabled && <Badge tone="warning">Disabled</Badge>}
+                            {connector.sandbox && <Badge tone="sample">Sandbox</Badge>}
                           </p>
                           <p className="text-xs text-slate-500">
                             {entry?.name ?? connector.kind} · {syncWindow(connector)} · {schedule(connector)}

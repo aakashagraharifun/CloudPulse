@@ -21,6 +21,8 @@ from app.schemas.connectors import (
     ConnectorUpdate,
     ConnectorVerifyRequest,
     FieldOption,
+    SandboxAuthorizeRequest,
+    SandboxAuthorizeResponse,
     SyncResponse,
     VerifyResponse,
     VerifyStepRead,
@@ -58,6 +60,7 @@ def _read(connector: Connector) -> ConnectorRead:
         provider=CATALOG[ConnectorKind(connector.kind)].provider,
         name=connector.name,
         enabled=connector.enabled,
+        sandbox=bool(connector.config.get("sandbox")),
         config=connector.config,
         credentials_hint=connector.credentials_hint,
         sync_interval_hours=connector.sync_interval_hours,
@@ -110,6 +113,7 @@ def catalog(settings: Settings = Depends(get_settings)) -> ConnectorCatalog:
                         default=f.default,
                         options=[FieldOption(value=v, label=label) for v, label in f.options],
                         show_if={"key": f.show_if[0], "value": f.show_if[1]} if f.show_if else None,
+                        section=f.section,
                     )
                     for f in entry.fields
                 ],
@@ -146,6 +150,36 @@ def verify_unsaved(
     except InvalidConnectorInput as exc:
         raise _invalid(exc) from exc
     return _verify_response(service.verify_credentials(settings, kind, config, secrets))
+
+
+@router.post(
+    "/sandbox/authorize",
+    response_model=SandboxAuthorizeResponse,
+    summary="Authorize a simulated provider account (mock consent; returns a sandbox token)",
+)
+def authorize_sandbox(
+    payload: SandboxAuthorizeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(require_admin),
+) -> SandboxAuthorizeResponse:
+    kind = ConnectorKind(payload.kind)
+    token, identity = service.issue_sandbox_token(settings, kind)
+    record_audit(
+        db,
+        "connector.sandbox_authorized",
+        actor=user,
+        request=request,
+        target_type="connector",
+        details={"kind": kind.value},
+    )
+    db.commit()
+    return SandboxAuthorizeResponse(
+        token=token,
+        identity=identity,
+        expires_in_seconds=service.sandbox.TOKEN_TTL_SECONDS,
+    )
 
 
 @router.post(

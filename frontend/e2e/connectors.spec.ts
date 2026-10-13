@@ -30,6 +30,7 @@ test.describe("live billing connectors", () => {
     }
 
     await sources.locator("li", { hasText: "OpenAI usage & costs" }).getByRole("button", { name: "Connect" }).click();
+    await page.getByRole("radio", { name: "Your own credentials" }).click();
     await page.getByLabel("Name *").fill(name);
     await page.getByLabel("Admin API key *").fill(key);
     await page.getByLabel("Sync schedule").selectOption("0");
@@ -47,6 +48,44 @@ test.describe("live billing connectors", () => {
     const connectors = (await (await api.get("connectors")).json()) as { id: number; name: string }[];
     const created = connectors.find((c) => c.name === name);
     expect(created).toBeDefined();
+    expect((await api.delete(`connectors/${created!.id}`)).status()).toBe(204);
+    await api.dispose();
+  });
+
+  test("sandbox: verify opens the mock authorization window, then the connector is saved", async ({ page }) => {
+    const name = unique("Claude sandbox");
+    await page.goto("/dashboard/connectors");
+    await page
+      .locator("section", { hasText: "Available sources" })
+      .locator("li", { hasText: "Anthropic Claude usage & costs" })
+      .getByRole("button", { name: "Connect" })
+      .click();
+    await expect(page.getByRole("radio", { name: "Sandbox account" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("button", { name: "Save connector" })).toBeDisabled();
+
+    const popupPromise = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "Verify credentials" }).click();
+    const popup = await popupPromise;
+    await expect(popup.getByRole("heading", { name: "Connect Anthropic to CloudPulse?" })).toBeVisible();
+    await popup.getByRole("button", { name: "Authorize" }).click();
+    await expect(popup.getByRole("heading", { name: "Access token accepted" })).toBeVisible();
+    await expect(popup.getByText("You can close this window")).toBeVisible();
+    await popup.getByRole("button", { name: "Close window" }).click();
+
+    await expect(page.getByText("Access token accepted. Finish the settings and save.")).toBeVisible();
+    await page.getByLabel("Name *").fill(name);
+    await page.getByLabel("Sync schedule").selectOption("0");
+    await page.getByRole("button", { name: "Save connector" }).click();
+
+    const row = page.locator("li", { hasText: name });
+    await expect(row.getByText("Sandbox", { exact: true })).toBeVisible();
+    await expect(row.getByText("✓ Acme AI (sandbox organization)")).toBeVisible();
+    await row.getByRole("button", { name: "Sync now" }).click();
+    await expect(row.getByText(/Sandbox sync: the simulated API returned \d+ cost lines/)).toBeVisible();
+
+    const api = await adminApi();
+    const connectors = (await (await api.get("connectors")).json()) as { id: number; name: string }[];
+    const created = connectors.find((c) => c.name === name);
     expect((await api.delete(`connectors/${created!.id}`)).status()).toBe(204);
     await api.dispose();
   });

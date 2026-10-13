@@ -26,6 +26,7 @@ class CatalogField(APIModel):
     default: Any
     options: list[FieldOption]
     show_if: dict[str, str] | None
+    section: Literal["settings", "auth"]
 
 
 class CatalogEntry(APIModel):
@@ -98,6 +99,8 @@ class ConnectorRead(APIModel):
     provider: str
     name: str
     enabled: bool
+    # Simulated provider: syncs validate data but never import it.
+    sandbox: bool
     config: dict[str, Any]
     credentials_hint: str
     sync_interval_hours: int
@@ -112,6 +115,16 @@ class ConnectorRead(APIModel):
     next_sync_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class SandboxAuthorizeRequest(APIModel):
+    kind: KindLiteral
+
+
+class SandboxAuthorizeResponse(APIModel):
+    token: str
+    identity: str
+    expires_in_seconds: int
 
 
 class SyncResponse(APIModel):

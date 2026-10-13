@@ -212,6 +212,7 @@ Copy `.env.example` to `.env` (git-ignored). Only `POSTGRES_PASSWORD` is require
 | `backend/` | `alembic upgrade head` | Apply database migrations |
 | `backend/` | `python -m scripts.generate_sample_data` | Regenerate the synthetic CSV |
 | `backend/` | `python -m scripts.manage_users create-admin` · `reset-password` | Create an admin or recover a password from the server |
+| `backend/` | `python -m scripts.seed_sandbox_connectors` | Add sandbox Claude and AWS Cost Explorer connectors (simulated; syncs never import data) |
 | `frontend/` | `npm run dev` · `npm run build` | Dev server · production build |
 | `frontend/` | `npm run lint` · `npm run typecheck` | ESLint · TypeScript |
 | `frontend/` | `npm run test:e2e` | Playwright end-to-end tests (use a throwaway database) |
@@ -253,7 +254,8 @@ docker-compose.yml         postgres, redis, mailpit; api, worker, beat, frontend
 | `/dashboard/incidents` · `/dashboard/incidents/[id]` | Incident list · investigation, evidence and response workflow |
 | `/dashboard/budgets` | Budgets, utilization, projections and threshold alerts |
 | `/dashboard/imports` | CSV upload with validation, sample data, import history, canonical format |
-| `/dashboard/connectors` | Live connectors: animated Claude authorization preview (mock), then connect, verify, sync and schedule AWS CUR, Cost Explorer, OpenAI and Anthropic |
+| `/dashboard/connectors` | Live connectors: animated Claude authorization preview (mock), then connect, verify, sync and schedule AWS CUR, Cost Explorer, OpenAI and Anthropic, with your own keys or a sandbox account |
+| `/connect/authorize` | Sandbox authorization window opened by *Verify credentials* (simulated account, "Access token accepted") |
 | `/dashboard/settings` | Account, detection thresholds, notification channels, allocation rules, users, audit log |
 
 **API** · http://127.0.0.1:8000/api/v1 (full reference in [docs/api.md](docs/api.md))
@@ -264,7 +266,7 @@ docker-compose.yml         postgres, redis, mailpit; api, worker, beat, frontend
 | Auth | `GET /auth/status` · `POST /auth/setup` · `POST /auth/login` · `GET /auth/me` · `POST /auth/logout` · `POST /auth/change-password` |
 | Users and audit | `GET/POST /users` · `PATCH /users/{id}` · `POST /users/{id}/reset-password` · `GET /audit-events` |
 | Imports | `POST /imports` · `POST /imports/sample` · `GET /imports` · `GET/DELETE /imports/{id}` · `GET /imports/schema` · `GET /imports/template.csv` |
-| Connectors | `GET /connectors/catalog` · `GET/POST /connectors` · `POST /connectors/verify` · `GET/PUT/DELETE /connectors/{id}` · `POST /connectors/{id}/test` · `POST /connectors/{id}/sync` |
+| Connectors | `GET /connectors/catalog` · `GET/POST /connectors` · `POST /connectors/verify` · `POST /connectors/sandbox/authorize` · `GET/PUT/DELETE /connectors/{id}` · `POST /connectors/{id}/test` · `POST /connectors/{id}/sync` |
 | Costs | `GET /costs/data-status` · `/costs/summary` · `/costs/timeseries` · `/costs/breakdown` · `/costs/forecast` |
 | Allocation | `GET/POST /allocation-rules` · `PUT/DELETE /allocation-rules/{id}` |
 | Detection | `GET/PUT /anomalies/settings` · `GET/POST /anomalies/runs` |

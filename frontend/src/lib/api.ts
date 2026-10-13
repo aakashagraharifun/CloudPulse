@@ -586,6 +586,8 @@ export type CatalogField = {
   default: string | number | boolean | null;
   options: { value: string; label: string }[];
   show_if: { key: string; value: string } | null;
+  /** "auth" fields identify the account; sandbox connectors don't use them. */
+  section: "settings" | "auth";
 };
 
 export type CatalogEntry = {
@@ -609,6 +611,8 @@ export type Connector = {
   provider: string;
   name: string;
   enabled: boolean;
+  /** Simulated provider: syncs validate data but never import it. */
+  sandbox: boolean;
   config: Record<string, unknown>;
   credentials_hint: string;
   sync_interval_hours: number;
@@ -649,3 +653,12 @@ export type SyncResponse = {
   changed: boolean;
   import_id: number | null;
 };
+
+export type SandboxAuthorizeResponse = { token: string; identity: string; expires_in_seconds: number };
+
+/** Message the sandbox authorization window posts back to the connect form. */
+export type SandboxAuthMessage = {
+  source: "cloudpulse-sandbox-auth";
+  state: string;
+  kind: ConnectorKind;
+} & ({ status: "authorized"; token: string; identity: string } | { status: "cancelled" });

@@ -26,6 +26,7 @@ from app.services.connectors import (
     openai_costs,
     service,
 )
+from app.services.connectors import sandbox as sandbox_module
 from app.services.connectors.base import CanonicalRow, ConnectorError, rows_to_csv
 from tests.connector_fakes import (
     FakeProviders,
@@ -753,3 +754,131 @@ def test_concurrent_sync_is_refused(client: TestClient, db: Session, fake: FakeP
     db.commit()
     response = client.post(f"/api/v1/connectors/{connector['id']}/sync")
     assert response.status_code == 409
+
+
+# --- sandbox (mock authorization) ----------------------------------------------------
+
+
+def _sandbox_token(client: TestClient, kind: str = "anthropic_costs") -> str:
+    response = client.post("/api/v1/connectors/sandbox/authorize", json={"kind": kind})
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["token"].startswith("cpsbx_")
+    assert body["identity"] and body["expires_in_seconds"] == 900
+    return body["token"]
+
+
+def test_sandbox_connector_is_verified_and_its_sync_writes_nothing(
+    client: TestClient, db: Session, fake: FakeProviders
+) -> None:
+    token = _sandbox_token(client, "aws_cost_explorer")
+    verify = client.post(
+        "/api/v1/connectors/verify",
+        json={"kind": "aws_cost_explorer", "credentials": {"sandbox_token": token}},
+    ).json()
+    assert verify["ok"] is True and "sandbox" in verify["identity"]
+    assert verify["steps"][0]["detail"].startswith("Access token accepted")
+
+    created = client.post(
+        "/api/v1/connectors",
+        json={
+            "kind": "aws_cost_explorer",
+            "name": "AWS (sandbox)",
+            "config": {"group_by": "REGION"},
+            "credentials": {"sandbox_token": token},
+            "lookback_days": 14,
+        },
+    ).json()
+    assert created["sandbox"] is True and created["config"]["sandbox"] is True
+    assert created["verified_identity"] == "AWS account 123456789012 (sandbox)"
+
+    synced = client.post(f"/api/v1/connectors/{created['id']}/sync").json()
+    assert synced["status"] == "succeeded" and synced["changed"] is False
+    assert "never write billing data" in synced["message"]
+    assert "70 cost lines" in synced["message"]  # 14 days x 5 services
+    assert db.scalar(select(func.count()).select_from(BillingImport)) == 0
+    assert db.scalar(select(func.count()).select_from(BillingRecord)) == 0
+    assert fake.requests == []  # no provider was contacted
+
+    # The stored token keeps working for tests after the 15-minute window.
+    assert client.post(f"/api/v1/connectors/{created['id']}/test").json()["ok"] is True
+
+
+def test_sandbox_tokens_are_checked(client: TestClient, monkeypatch) -> None:
+    token = _sandbox_token(client, "anthropic_costs")
+
+    def create(credentials: dict, kind: str = "openai_costs"):
+        return client.post(
+            "/api/v1/connectors",
+            json={"kind": kind, "name": "x", "credentials": credentials},
+        )
+
+    wrong_kind = create({"sandbox_token": token})
+    assert wrong_kind.status_code == 422
+    assert wrong_kind.json()["error"]["code"] == "invalid_sandbox_token"
+    forged = create({"sandbox_token": "cpsbx_" + "A" * 40}, kind="anthropic_costs")
+    assert forged.status_code == 422
+
+    monkeypatch.setattr(sandbox_module, "TOKEN_TTL_SECONDS", -1)
+    expired = create({"sandbox_token": token}, kind="anthropic_costs")
+    assert expired.status_code == 422
+    assert "expired" in expired.json()["error"]["message"]
+
+
+def test_switching_a_sandbox_connector_to_real_credentials(
+    client: TestClient, fake: FakeProviders
+) -> None:
+    anthropic_routes(fake, {})
+    token = _sandbox_token(client)
+    created = client.post(
+        "/api/v1/connectors",
+        json={"kind": "anthropic_costs", "name": "Claude", "credentials": {"sandbox_token": token}},
+    ).json()
+    settings = {"name": "Claude", "config": {"sandbox": True}, "lookback_days": 7}
+    kept = client.put(f"/api/v1/connectors/{created['id']}", json=settings).json()
+    assert kept["sandbox"] is True
+    real = client.put(
+        f"/api/v1/connectors/{created['id']}",
+        json=settings | {"credentials": {"admin_key": ANTHROPIC_KEY}},
+    ).json()
+    # The flag follows the credentials, not the submitted config.
+    assert real["sandbox"] is False and real["verified_identity"] is None
+    assert client.post(f"/api/v1/connectors/{created['id']}/test").json()["identity"] == "Acme AI"
+
+
+def test_sandbox_data_is_deterministic_and_valid() -> None:
+    from app.models import ConnectorKind
+    from app.services.normalization.normalizer import normalize_csv
+
+    for kind in ConnectorKind:
+        first = sandbox_module.fetch(kind, {}, start=date(2026, 9, 1), end=date(2026, 9, 30))
+        again = sandbox_module.fetch(kind, {}, start=date(2026, 9, 15), end=date(2026, 9, 30))
+        assert first.rows and rows_to_csv(first.rows)
+        overlap = [r for r in first.rows if r.usage_date >= date(2026, 9, 15)]
+        assert rows_to_csv(overlap) == rows_to_csv(again.rows) or kind == ConnectorKind.AWS_CUR_S3
+        result = normalize_csv(
+            rows_to_csv(first.rows), max_rows=10**6, max_errors=10, today=date(2026, 9, 30)
+        )
+        assert result.is_valid, (kind, result.errors[:3])
+
+
+def test_seed_script_adds_sandbox_connectors_once(
+    monkeypatch, db: Session, client: TestClient
+) -> None:
+    from sqlalchemy.orm import sessionmaker
+
+    from scripts import seed_sandbox_connectors
+
+    # The script opens its own sessions; point them at the test database.
+    test_sessions = sessionmaker(bind=db.get_bind(), expire_on_commit=False)
+    monkeypatch.setattr(seed_sandbox_connectors, "get_sessionmaker", lambda: test_sessions)
+    assert seed_sandbox_connectors.main() == 0
+    connectors = db.scalars(select(Connector).order_by(Connector.id)).all()
+    assert [(c.name, c.kind, c.config["sandbox"]) for c in connectors] == [
+        ("Claude (sandbox)", "anthropic_costs", True),
+        ("AWS Cost Explorer (sandbox)", "aws_cost_explorer", True),
+    ]
+    assert all(c.last_sync_status == "succeeded" for c in connectors)
+    assert db.scalar(select(func.count()).select_from(BillingRecord)) == 0
+    assert seed_sandbox_connectors.main() == 0  # re-running skips existing ones
+    assert db.scalar(select(func.count()).select_from(Connector)) == 2

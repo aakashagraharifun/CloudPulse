@@ -38,6 +38,8 @@ class FieldDef:
     options: tuple[tuple[str, str], ...] = ()
     # Show only when another field has this value, e.g. ("group_by", "TAG").
     show_if: tuple[str, str] | None = None
+    # "auth" fields identify the account; sandbox connectors do not use them.
+    section: Literal["settings", "auth"] = "settings"
 
 
 @dataclass(frozen=True)
@@ -76,7 +78,12 @@ class AwsSecrets(_Strict):
     session_token: str | None = Field(None, max_length=4096)
 
 
-class AwsRoleConfig(_Strict):
+class _ConnectorConfig(_Strict):
+    # Set by the service from the credentials type, never trusted from input alone.
+    sandbox: bool = False
+
+
+class AwsRoleConfig(_ConnectorConfig):
     role_arn: str | None = None
     external_id: str | None = None
 
@@ -149,11 +156,15 @@ class AdminKeySecrets(_Strict):
     admin_key: str = Field(min_length=20, max_length=512, pattern=r"^\S+$")
 
 
-class OpenAIConfig(_Strict):
+class SandboxSecrets(_Strict):
+    sandbox_token: str = Field(min_length=20, max_length=1024, pattern=r"^cpsbx_\S+$")
+
+
+class OpenAIConfig(_ConnectorConfig):
     map_projects: bool = True
 
 
-class AnthropicConfig(_Strict):
+class AnthropicConfig(_ConnectorConfig):
     map_workspaces: bool = True
 
 
@@ -167,15 +178,29 @@ _AWS_KEY_FIELDS = (
         required=True,
         secret=True,
         placeholder="AKIA…",
-        help="Keys of an IAM user (or the source identity when a role is assumed).",
+        help=(
+            "The public half of an AWS access key: 20 characters starting with AKIA "
+            "(an IAM user) or ASIA (temporary). Create one in the AWS console under "
+            "IAM → Users → Security credentials → Create access key, for a read-only user."
+        ),
+        section="auth",
     ),
-    FieldDef("secret_access_key", "Secret access key", "secret", required=True, secret=True),
+    FieldDef(
+        "secret_access_key",
+        "Secret access key",
+        "secret",
+        required=True,
+        secret=True,
+        help="The private half, shown once when the access key is created.",
+        section="auth",
+    ),
     FieldDef(
         "session_token",
         "Session token",
         "secret",
         secret=True,
         help="Only for temporary credentials. They expire, so scheduled syncs will stop.",
+        section="auth",
     ),
     FieldDef(
         "role_arn",
@@ -183,9 +208,14 @@ _AWS_KEY_FIELDS = (
         "text",
         placeholder="arn:aws:iam::123456789012:role/CloudPulseBilling",
         help="Recommended: a read-only role in the payer account, assumed with sts:AssumeRole.",
+        section="auth",
     ),
     FieldDef(
-        "external_id", "External ID", "text", help="Set when the role's trust policy requires one."
+        "external_id",
+        "External ID",
+        "text",
+        help="Set when the role's trust policy requires one.",
+        section="auth",
     ),
 )
 
@@ -277,6 +307,7 @@ CATALOG: dict[ConnectorKind, KindDef] = {
                 secret=True,
                 placeholder="sk-admin-…",
                 help="Organization settings → Admin keys. Project API keys are rejected.",
+                section="auth",
             ),
             FieldDef(
                 "map_projects", "Use project names as CloudPulse projects", "toggle", default=True
@@ -304,6 +335,7 @@ CATALOG: dict[ConnectorKind, KindDef] = {
                 secret=True,
                 placeholder="sk-ant-admin01-…",
                 help="Claude Console → Settings → Admin keys. Workspace API keys are rejected.",
+                section="auth",
             ),
             FieldDef(
                 "map_workspaces",
@@ -347,13 +379,23 @@ def validate_config(kind: ConnectorKind, config: dict[str, Any]) -> dict[str, An
     return _validate(CATALOG[kind].config_model, config, "config")
 
 
+def is_sandbox(secrets: dict[str, Any]) -> bool:
+    return "sandbox_token" in secrets
+
+
 def validate_secrets(kind: ConnectorKind, secrets: dict[str, Any]) -> dict[str, Any]:
-    cleaned = _validate(CATALOG[kind].secrets_model, secrets, "credentials")
+    model = SandboxSecrets if is_sandbox(secrets) else CATALOG[kind].secrets_model
+    cleaned = _validate(model, secrets, "credentials")
     return {k: v for k, v in cleaned.items() if v not in (None, "")}
 
 
 def secret_for_hint(kind: ConnectorKind, secrets: dict[str, Any]) -> str:
-    return str(secrets.get("admin_key") or secrets.get("access_key_id") or "")
+    return str(
+        secrets.get("admin_key")
+        or secrets.get("access_key_id")
+        or secrets.get("sandbox_token")
+        or ""
+    )
 
 
 def run_fetch(

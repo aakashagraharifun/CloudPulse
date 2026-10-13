@@ -10,6 +10,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -28,6 +29,7 @@ from app.models import (
     SyncStatus,
     User,
 )
+from app.services.connectors import sandbox
 from app.services.connectors.base import (
     ConnectorError,
     VerifyResult,
@@ -36,12 +38,14 @@ from app.services.connectors.base import (
 )
 from app.services.connectors.registry import (
     CATALOG,
+    is_sandbox,
     run_fetch,
     secret_for_hint,
     validate_config,
     validate_secrets,
 )
 from app.services.ingestion.service import ReplaceScope, import_billing_file
+from app.services.normalization.normalizer import FileValidationError, normalize_csv
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,18 @@ class SyncOutcome:
     message: str
     billing_import: BillingImport | None
     changed: bool
+
+
+def _check_sandbox(settings: Settings, kind: ConnectorKind, secrets: dict, *, fresh: bool) -> None:
+    try:
+        sandbox.check_token(settings, secrets["sandbox_token"], kind, fresh=fresh)
+    except sandbox.InvalidSandboxToken as exc:
+        raise AppError(str(exc), code="invalid_sandbox_token", status_code=422) from exc
+
+
+def issue_sandbox_token(settings: Settings, kind: ConnectorKind) -> tuple[str, str]:
+    """A fresh sandbox token and the simulated account it stands for."""
+    return sandbox.issue_token(settings, kind), sandbox.IDENTITY[kind]
 
 
 def get_connector(db: Session, connector_id: int) -> Connector:
@@ -88,11 +104,19 @@ def create_connector(
 ) -> Connector:
     clean_config = validate_config(kind, config)
     secrets = validate_secrets(kind, credentials)
+    clean_config["sandbox"] = is_sandbox(secrets)
+    identity = None
+    if clean_config["sandbox"]:
+        _check_sandbox(settings, kind, secrets, fresh=True)
+        identity = sandbox.IDENTITY[kind]
     connector = Connector(
         kind=kind,
         name=name,
         enabled=enabled,
         config=clean_config,
+        # A sandbox token is verified by construction: CloudPulse issued it.
+        verified_identity=identity,
+        last_verified_at=datetime.now(UTC) if identity else None,
         credentials_encrypted=encrypt_json(settings, secrets),
         credentials_hint=mask_secret(secret_for_hint(kind, secrets)),
         sync_interval_hours=sync_interval_hours,
@@ -118,31 +142,47 @@ def update_connector(
 ) -> bool:
     """Apply changes; returns True when the credentials were replaced."""
     kind = ConnectorKind(connector.kind)
-    connector.config = validate_config(kind, config)
+    clean_config = validate_config(kind, config)
+    was_sandbox = bool(connector.config.get("sandbox"))
+    secrets = validate_secrets(kind, credentials) if credentials else None
+    clean_config["sandbox"] = is_sandbox(secrets) if secrets is not None else was_sandbox
+    if secrets is not None and clean_config["sandbox"]:
+        _check_sandbox(settings, kind, secrets, fresh=True)
+    connector.config = clean_config
     connector.name = name
     connector.enabled = enabled
     connector.sync_interval_hours = sync_interval_hours
     connector.lookback_days = lookback_days
-    if credentials:
-        secrets = validate_secrets(kind, credentials)
+    if secrets is not None:
         connector.credentials_encrypted = encrypt_json(settings, secrets)
         connector.credentials_hint = mask_secret(secret_for_hint(kind, secrets))
-        connector.last_verified_at = None
-        connector.verified_identity = None
+        sandboxed = clean_config["sandbox"]
+        connector.last_verified_at = datetime.now(UTC) if sandboxed else None
+        connector.verified_identity = sandbox.IDENTITY[kind] if sandboxed else None
         return True
     return False
 
 
 def verify_credentials(
-    settings: Settings, kind: ConnectorKind, config: dict[str, Any], secrets: dict[str, Any]
+    settings: Settings,
+    kind: ConnectorKind,
+    config: dict[str, Any],
+    secrets: dict[str, Any],
+    *,
+    fresh: bool = True,
 ) -> VerifyResult:
+    if is_sandbox(secrets):
+        _check_sandbox(settings, kind, secrets, fresh=fresh)
+        return sandbox.verify(kind)
     with http_client_factory(settings) as client:
         return CATALOG[kind].verify(client, secrets, config)
 
 
 def verify_connector(db: Session, settings: Settings, connector: Connector) -> VerifyResult:
     secrets = decrypt_json(settings, connector.credentials_encrypted)
-    result = verify_credentials(settings, ConnectorKind(connector.kind), connector.config, secrets)
+    result = verify_credentials(
+        settings, ConnectorKind(connector.kind), connector.config, secrets, fresh=False
+    )
     if result.ok:
         connector.last_verified_at = datetime.now(UTC)
         connector.verified_identity = (result.identity or "")[:255] or None
@@ -201,6 +241,8 @@ def sync_connector(
     kind = ConnectorKind(connector.kind)
     today = today or datetime.now(UTC).date()
     start, end = sync_window(connector, today)
+    if connector.config.get("sandbox"):
+        return _sandbox_sync(db, settings, connector, kind, start, end)
     try:
         secrets = decrypt_json(settings, connector.credentials_encrypted)
         with http_client_factory(settings) as client:
@@ -272,6 +314,42 @@ def sync_connector(
     return _finish(
         db, connector, SyncStatus.SUCCEEDED, f"{message} {notes}".strip(), billing_import, True
     )
+
+
+def _sandbox_sync(
+    db: Session,
+    settings: Settings,
+    connector: Connector,
+    kind: ConnectorKind,
+    start: date,
+    end: date,
+) -> SyncOutcome:
+    """Fetch from the simulated API and validate like a real import, but write nothing."""
+    try:
+        fetched = sandbox.fetch(kind, connector.config, start=start, end=end)
+        result = normalize_csv(
+            rows_to_csv(fetched.rows),
+            max_rows=settings.max_upload_rows,
+            max_errors=settings.max_reported_errors,
+            today=end,
+        )
+    except (ConnectorError, FileValidationError) as exc:
+        return _finish(db, connector, SyncStatus.FAILED, f"Sandbox sync failed: {exc}")
+    if not result.is_valid:
+        return _finish(
+            db,
+            connector,
+            SyncStatus.FAILED,
+            f"Sandbox data failed validation ({result.error_count}).",
+        )
+    total = sum((r.cost for r in result.records), start=Decimal(0))
+    first, last = fetched.ranges[0][0], fetched.ranges[-1][1]
+    message = (
+        f"Sandbox sync: the simulated API returned {len(result.records):,} cost lines "
+        f"(USD {total:,.2f}) for {first} to {last}, and all passed validation. "
+        "Sandbox connectors never write billing data."
+    )
+    return _finish(db, connector, SyncStatus.SUCCEEDED, message)
 
 
 def due_connectors(db: Session, now: datetime | None = None) -> list[int]:
